@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import subprocess
@@ -17,9 +18,15 @@ TEST_DATABASE_URL = os.environ.get(
 )
 os.environ["HOOPSAI_DATABASE_URL"] = TEST_DATABASE_URL
 
+# psycopg's async mode needs a selector event loop; TestClient's loop follows this policy.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).parent / "fixtures"
 DATA_TABLES = (
+    "serving.predictions",
+    "serving.model_versions",
     "features.game_features",
     "features.elo_ratings",
     "core.pbp_events",

@@ -366,3 +366,43 @@ def test_build_training_frame_from_database(db: Engine) -> None:
     assert frame["pregame_prob"].between(0, 1, inclusive="neither").all()
     assert set(frame["home_win"].unique()) <= {0.0, 1.0}
     assert "description" not in frame  # per-play text is not kept for training
+
+
+def test_poller_switches_to_a_newly_promoted_model(
+    games_db: Engine, trained: tuple[ingame.InGameModel, ingame.InGameReport]
+) -> None:
+    model, _ = trained
+    replacement = ingame.InGameModel(estimator=model.estimator, train_seasons=[2099])
+    promoted = ["1"]
+    loads: list[str] = []
+
+    def load() -> tuple[ingame.InGameModel, str]:
+        loads.append(promoted[0])
+        return replacement, promoted[0]
+
+    events, _ = make_pbp_game(np.random.default_rng(6), GAME, 0.0)
+    source = FakeLiveSource(events)
+    source.revealed = 10
+    recorder = service.Recorder(games_db, Published(), "1", source="live")
+    now = [0.0]
+    poller = service.LivePoller(
+        games_db,
+        source,
+        model,
+        recorder,
+        models=service.ModelSource(current_version=lambda: promoted[0], load=load),
+        clock=lambda: now[0],
+    )
+    tip = datetime(2026, 10, 21, 0, 30, tzinfo=UTC)
+    poller.tick(tip)
+    assert loads == []  # same version: nothing downloaded
+
+    promoted[0] = "2"
+    now[0] = 300.0
+    poller.tick(tip)
+    assert loads == []  # not time to check yet
+    now[0] = 601.0
+    poller.tick(tip)
+    assert loads == ["2"]
+    assert recorder.model_version == "2"
+    assert poller.model is replacement and poller.trackers[GAME].model is replacement

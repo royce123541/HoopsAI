@@ -217,13 +217,32 @@ def log_and_register_ingame(
     )
 
 
-def _load(tracking_uri: str, name: str) -> tuple[Any, str]:
+def production_version(tracking_uri: str, name: str) -> str | None:
+    """The version the production alias points at (a cheap registry lookup, no download)."""
     mlflow.set_tracking_uri(tracking_uri)
     production = _production(MlflowClient(), name)
-    if production is None:
+    return None if production is None else str(production.version)
+
+
+def _load(tracking_uri: str, name: str) -> tuple[Any, str]:
+    version = production_version(tracking_uri, name)
+    if version is None:
         raise LookupError(f"no {name}@{PRODUCTION_ALIAS} model registered")
-    pyfunc = mlflow.pyfunc.load_model(f"models:/{name}@{PRODUCTION_ALIAS}")
-    return pyfunc.unwrap_python_model().model, str(production.version)
+    # Load that exact version, not the alias: a promotion in between must not pair one
+    # version's number with another version's model.
+    pyfunc = mlflow.pyfunc.load_model(f"models:/{name}/{version}")
+    return pyfunc.unwrap_python_model().model, version
+
+
+def heldout_logloss(tracking_uri: str, name: str, version: str) -> float | None:
+    """The log loss a version scored on its newest held-out season (its version tag)."""
+    mlflow.set_tracking_uri(tracking_uri)
+    try:
+        tags = MlflowClient().get_model_version(name, version).tags
+    except MlflowException:
+        return None
+    seasons = sorted(k for k in tags if k.startswith("backtest_logloss_"))
+    return float(tags[seasons[-1]]) if seasons else None
 
 
 def load_production(tracking_uri: str) -> tuple[PregameModel, str]:

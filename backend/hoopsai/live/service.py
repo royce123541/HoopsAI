@@ -100,21 +100,49 @@ class Recorder:
 # ---------------------------------------------------------------- live polling
 
 
+@dataclass(frozen=True)
+class ModelSource:
+    """How the poller finds and loads the production in-game model."""
+
+    current_version: Callable[[], str | None]  # cheap registry lookup
+    load: Callable[[], tuple[InGameModel, str]]  # downloads the model
+
+
 @dataclass
 class LivePoller:
     """Polls the scoreboard every `scoreboard_every_s` and each live game's play-by-play
-    every `pbp_every_s`. Only games in core.games (modelled game types) are tracked."""
+    every `pbp_every_s`. Only games in core.games (modelled game types) are tracked. With a
+    `models` source it also checks every `model_check_every_s` whether a new in-game model
+    was promoted, and switches to it without a restart."""
 
     engine: Engine
     source: LiveSource
     model: InGameModel
     recorder: Recorder
+    models: ModelSource | None = None
     scoreboard_every_s: float = 30.0
     pbp_every_s: float = 10.0
+    model_check_every_s: float = 600.0
     clock: Callable[[], float] = time.monotonic
     trackers: dict[str, LiveTracker] = field(default_factory=dict)
     _last_scoreboard: float | None = None
+    _last_model_check: float | None = None
     _last_pbp: dict[str, float] = field(default_factory=dict)
+
+    def check_model(self) -> None:
+        """Switch to a newly promoted model. Games in progress keep their pre-game estimate
+        and continue with the new model from their next play."""
+        if self.models is None:
+            return
+        version = self.models.current_version()
+        if version is None or version == self.recorder.model_version:
+            return
+        model, loaded = self.models.load()
+        log.info("in-game model v%s -> v%s", self.recorder.model_version, loaded)
+        self.model = model
+        self.recorder.model_version = loaded
+        for tracker in self.trackers.values():
+            tracker.model = model
 
     def _known_games(self, game_ids: list[str]) -> set[str]:
         if not game_ids:
@@ -166,6 +194,12 @@ class LivePoller:
 
     def tick(self, now_utc: datetime | None = None) -> None:
         now = self.clock()
+        if (
+            self._last_model_check is None
+            or now - self._last_model_check >= self.model_check_every_s
+        ):
+            self._last_model_check = now
+            self.check_model()
         if self._last_scoreboard is None or now - self._last_scoreboard >= self.scoreboard_every_s:
             self._last_scoreboard = now
             self.poll_scoreboard(now_utc or datetime.now(UTC))

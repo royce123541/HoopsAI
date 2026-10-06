@@ -12,8 +12,8 @@ Machine-learned win probabilities for NBA games, before tip-off and live during 
 | M0 | Scaffold: compose stack, FastAPI `/api/health`, Next.js status page, Alembic | ✅ done |
 | M1 | Ingestion: `DataSource`, nba_api loaders, backfill CLI, `worker` service | ✅ done |
 | M2 | Elo, point-in-time features, pre-game LightGBM model, MLflow | ✅ done |
-| M3 | Pre-game serving: REST endpoints, slate, game and model pages | ⏳ next |
-| M4 | Live: in-game model, `live` poller, Redis to WebSocket, live chart, replay | |
+| M3 | Pre-game serving: REST endpoints, slate, game and model pages | ✅ done |
+| M4 | Live: in-game model, `live` poller, Redis to WebSocket, live chart, replay | ⏳ next |
 | M5 | Ops: schedules, drift monitor, CI | |
 
 ## Run everything (Docker)
@@ -113,6 +113,26 @@ npm run dev                        # http://localhost:3000, API_INTERNAL_URL def
 
 On Windows, `hoopsai api` switches uvicorn to a selector event loop, because psycopg's async mode can't run on the default Proactor loop.
 
+## Predictions and the web app
+
+```sh
+cd backend
+uv run hoopsai predict               # score the next 7 days' scheduled games (US Eastern dates)
+uv run hoopsai predict --days 21     # look further ahead
+uv run hoopsai predict --date 2025-06-22   # score a past date (flagged as made after tip-off)
+```
+
+Predictions are stored in `serving.predictions`. A new row is written only when a game's probability or the production model changes.
+
+| Page | Shows |
+|---|---|
+| `/` (`?date=YYYY-MM-DD`) | The day's games, each with its win-probability split and links to the previous and next game days |
+| `/games/{id}` | The prediction, the factors behind it (TreeSHAP), and a team comparison |
+| `/teams`, `/teams/{id}` | Teams ranked by Elo, plus each team's Elo history, upcoming games and recent results |
+| `/model` | Backtest results against Elo, calibration, and feature importance |
+
+The API serves the same data as JSON: `/api/games`, `/api/games/{id}`, `/api/teams`, `/api/teams/{id}` and `/api/model`. The web app's TypeScript types are generated from its OpenAPI schema; with the API running, refresh them with `cd web && npm run gen:api`.
+
 ## Checks
 
 ```sh
@@ -122,5 +142,5 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy hoopsai tests
 
 # web
 cd web
-npm run lint && npm run typecheck && npm run build
+npm run lint && npm run typecheck && npx prettier --check . && npm run build
 ```

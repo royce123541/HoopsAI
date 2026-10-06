@@ -17,7 +17,7 @@ The plan has two parts:
 
 | Layer | Choice | Why |
 |---|---|---|
-| Frontend | **Next.js (App Router) + TypeScript**, Tailwind CSS, shadcn/ui, TanStack Query, Recharts | SSR for the slate pages, strong typing, and fast UI building. Recharts draws the win-probability curves. |
+| Frontend | **Next.js (App Router) + TypeScript**, Tailwind CSS, Recharts, and API types generated with `openapi-typescript` | Server-rendered pages read the API directly, so M3 needed neither shadcn/ui nor TanStack Query. TanStack Query will be reconsidered for live updates in M4. Recharts draws the Elo and calibration charts; simple bars are plain HTML. |
 | Realtime to the browser | **Native WebSockets** (FastAPI to the browser), with Redis pub/sub behind them | Simple. Several API replicas can share one live feed. |
 | Backend API | **FastAPI** (Python 3.12), Pydantic v2, SQLAlchemy 2.0 (async), Alembic | Same language as the ML code, so models and feature code are shared rather than rewritten. Async suits the WebSocket fan-out. |
 | Database | **PostgreSQL 16** | Relational game and stat data, JSONB for raw payloads, and enough capacity for live snapshots (about 600k rows a season). |
@@ -135,7 +135,12 @@ Features per team, used as home minus away differences plus raw values:
 That log loss is stored at full precision as a version tag. Each prediction row records `model_version`.
 
 ### 3.4 Serving
-- **Pre-game (batch):** the worker scores the day's games every morning and rescores every 2 hours until tipoff. Results are written to `predictions` (game_id, model_version, home_wp, shap_top JSONB, created_at). The API only reads from this table, so there is no inference on the request path.
+- **Pre-game (batch):** `hoopsai predict` (`hoopsai/predict/pregame.py`) scores the coming week's scheduled games.
+  - **When:** after the nightly ingest and every 2 hours.
+  - **Inputs:** stored features; they are rebuilt only if missing or from a different feature version.
+  - **Writes:** a row in `serving.predictions` (game_id, model_version, home_win_prob, top-10 TreeSHAP `factors`, `made_before_tip`, created_at), but only when a game's probability or model changes.
+  - **Model snapshot:** the backtest report and feature importance of each model version used are copied from MLflow into `serving.model_versions`, so the API never calls MLflow.
+  - **Reads:** the API only reads these tables, so there is no inference on the request path.
 - **Live (streaming):**
   - The `live` service checks the live scoreboard about every 30s. For each game in progress, it polls the box score and play-by-play every 5–10s.
   - When the state changes, it runs the in-game model, inserts a row into `live_wp_snapshots`, and publishes JSON to the Redis channel `game:{id}`.
@@ -180,7 +185,7 @@ The OpenAPI schema generates TypeScript types for `web/lib/api` with `openapi-ty
 - **Raw and audit:** `raw.api_responses`, `raw.ingestion_runs`
 - **Core data:** `teams`, `games`, `team_game_stats`, `pbp_events`
 - **Features:** `features.elo_ratings` (pre and post Elo for each team and game) and `features.game_features` (one JSONB row per game with the 66 model features, versioned as `v1`). Both are fully rebuilt in one transaction.
-- **Serving:** `model_versions`, `predictions`, `live_wp_snapshots`
+- **Serving:** `serving.model_versions`, `serving.predictions`; `live_wp_snapshots` comes in M4
 - **Indexes:** `(game_date)`, `(game_id, created_at)`, `(game_id, ts)`
 
 ---

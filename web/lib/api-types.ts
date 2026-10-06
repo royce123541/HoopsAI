@@ -135,6 +135,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/model/monitoring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Monitoring
+         * @description Latest accuracy check per model and window (pre-game first; season before 30 days).
+         */
+        get: operations["get_monitoring_api_model_monitoring_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Status */
+        get: operations["get_status_api_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -280,6 +317,25 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** JobStatus */
+        JobStatus: {
+            /** Job */
+            job: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "success" | "failed";
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Detail */
+            detail: string | null;
+        };
         /** LiveSummary */
         LiveSummary: {
             /** Home Win Prob */
@@ -336,6 +392,38 @@ export interface components {
             /** Top Features */
             top_features: components["schemas"]["FeatureImportance"][];
         };
+        /** MonitoringResult */
+        MonitoringResult: {
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "pregame" | "ingame";
+            /**
+             * Window
+             * @enum {string}
+             */
+            window: "season" | "last_30_days";
+            /** Model Version */
+            model_version: string | null;
+            /** Games */
+            games: number;
+            metrics: components["schemas"]["Metrics"] | null;
+            /** Expected Logloss */
+            expected_logloss: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "warning" | "insufficient";
+            /** Message */
+            message: string;
+            /**
+             * Run At
+             * Format: date-time
+             */
+            run_at: string;
+        };
         /** PredictionSummary */
         PredictionSummary: {
             /** Home Win Prob */
@@ -383,6 +471,17 @@ export interface components {
             next_date: string | null;
             /** Games */
             games: components["schemas"]["GameSummary"][];
+        };
+        /** SystemStatus */
+        SystemStatus: {
+            /** Models */
+            models: {
+                [key: string]: string | null;
+            };
+            /** Jobs */
+            jobs: components["schemas"]["JobStatus"][];
+            /** Monitoring */
+            monitoring: components["schemas"]["MonitoringResult"][];
         };
         /** TeamDetail */
         TeamDetail: {
@@ -682,6 +781,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_monitoring_api_model_monitoring_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitoringResult"][];
+                };
+            };
+        };
+    };
+    get_status_api_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStatus"];
                 };
             };
         };

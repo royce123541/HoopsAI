@@ -1,6 +1,7 @@
 import { CalibrationChart } from "@/components/CalibrationChart";
 import { SeasonComparison } from "@/components/SeasonComparison";
-import { getModel } from "@/lib/api";
+import { TrackRecord } from "@/components/TrackRecord";
+import { getModel, getMonitoring } from "@/lib/api";
 import { percent, seasonLabel } from "@/lib/format";
 
 function Stat({
@@ -26,7 +27,7 @@ function Stat({
 }
 
 export default async function ModelPage() {
-  const model = await getModel();
+  const [model, monitoring] = await Promise.all([getModel(), getMonitoring()]);
   if (!model) {
     return (
       <div>
@@ -79,6 +80,20 @@ export default async function ModelPage() {
           />
         </dl>
       </header>
+
+      <section aria-labelledby="track-record">
+        <h2
+          id="track-record"
+          className="font-condensed text-3xl font-bold tracking-tight"
+        >
+          On real games
+        </h2>
+        <p className="mt-1 mb-4 max-w-prose text-ink-2">
+          Checked every night against the accuracy each model reached on seasons
+          it never saw.
+        </p>
+        <TrackRecord results={monitoring ?? []} />
+      </section>
 
       <section aria-labelledby="seasons">
         <h2

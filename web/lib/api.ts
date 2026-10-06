@@ -24,6 +24,7 @@ export type FeatureImportance = Schemas["FeatureImportance"];
 export type WinProbSeries = Schemas["WinProbSeries"];
 export type WinProbPoint = Schemas["WinProbPoint"];
 export type LiveSummary = Schemas["LiveSummary"];
+export type MonitoringResult = Schemas["MonitoringResult"];
 
 function apiBaseUrl(): string {
   return process.env.API_INTERNAL_URL ?? "http://127.0.0.1:8000";
@@ -50,6 +51,7 @@ export const getTeams = () => get<TeamListItem[]>("/teams");
 export const getTeam = (id: string) =>
   get<TeamDetail>(`/teams/${encodeURIComponent(id)}`);
 export const getModel = () => get<ModelInfo>("/model");
+export const getMonitoring = () => get<MonitoringResult[]>("/model/monitoring");
 export const getWinProb = (id: string) =>
   get<WinProbSeries>(`/games/${encodeURIComponent(id)}/winprob`);
 

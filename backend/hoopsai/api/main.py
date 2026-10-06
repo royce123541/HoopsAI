@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
 from hoopsai import __version__
-from hoopsai.api.routers import games, health, model, teams
+from hoopsai.api.routers import games, health, live, model, teams
 from hoopsai.config import get_settings
 from hoopsai.db.session import get_engine
 
@@ -30,7 +30,7 @@ def create_app() -> FastAPI:
         allow_methods=["GET"],
         allow_headers=["*"],
     )
-    for router in (health.router, games.router, teams.router, model.router):
+    for router in (health.router, games.router, teams.router, model.router, live.router):
         app.include_router(router, prefix="/api")
     return app
 

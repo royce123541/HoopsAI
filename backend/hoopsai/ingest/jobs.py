@@ -41,16 +41,23 @@ def predict_pregame() -> None:
 
 
 def retrain() -> None:
-    """Weekly: backtest, refit and register; promotion is gated in hoopsai.ml.registry."""
+    """Weekly: backtest, refit and register both models; promotion is gated in
+    hoopsai.ml.registry. In-game training reuses the seasons that have play-by-play."""
     from hoopsai.config import get_settings
+    from hoopsai.ml import ingame, registry
     from hoopsai.ml.train import format_report, train_from_db
 
-    result = train_from_db(
-        get_sync_engine(),
-        today=datetime.now(UTC).date(),
-        tracking_uri=get_settings().mlflow_tracking_uri,
-    )
+    engine, tracking_uri = get_sync_engine(), get_settings().mlflow_tracking_uri
+    result = train_from_db(engine, today=datetime.now(UTC).date(), tracking_uri=tracking_uri)
     log.info("retrain backtest:\n%s", format_report(result.report))
+
+    seasons = [s for s in ingame.seasons_with_pbp(engine) if s >= ingame.FIRST_TRAINING_SEASON]
+    if len(seasons) < 2:
+        log.warning("in-game retrain skipped: play-by-play for %s only", seasons)
+        return
+    model, report = ingame.train_and_evaluate(ingame.build_training_frame(engine, seasons))
+    log.info("in-game retrain:\n%s", ingame.format_report(report))
+    registry.log_and_register_ingame(model, report, ingame.DEFAULT_PARAMS, tracking_uri)
 
 
 def ingest_schedule() -> RunSummary:

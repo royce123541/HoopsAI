@@ -219,3 +219,28 @@ class Prediction(Base):
     factors: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)  # TreeSHAP, top by |impact|
     made_before_tip: Mapped[bool] = mapped_column(Boolean)  # False for after-the-fact scoring
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LiveWinProb(Base):
+    """In-game win probability after a play-by-play event (from the live poller or a replay)."""
+
+    __tablename__ = "live_wp_snapshots"
+    __table_args__ = (
+        Index("ix_live_wp_snapshots_game_action", "game_id", "action_id"),
+        {"schema": "serving"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    game_id: Mapped[str] = mapped_column(ForeignKey("core.games.game_id"))
+    source: Mapped[str] = mapped_column(Text)  # "live" | "replay"
+    model_version: Mapped[str] = mapped_column(Text)
+    action_id: Mapped[int] = mapped_column(Integer)
+    period: Mapped[int] = mapped_column(SmallInteger)
+    clock_seconds: Mapped[float] = mapped_column(Float)
+    elapsed_seconds: Mapped[float] = mapped_column(Float)
+    score_home: Mapped[int] = mapped_column(SmallInteger)
+    score_away: Mapped[int] = mapped_column(SmallInteger)
+    possession: Mapped[int] = mapped_column(SmallInteger)  # 1 home, -1 away, 0 unknown
+    home_win_prob: Mapped[float] = mapped_column(Float)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

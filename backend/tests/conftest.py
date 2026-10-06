@@ -14,7 +14,7 @@ from sqlalchemy import Engine, create_engine, make_url, text
 # anything calls get_settings(), which is cached.
 TEST_DATABASE_URL = os.environ.get(
     "HOOPSAI_TEST_DATABASE_URL",
-    "postgresql+psycopg://hoopsai:hoopsai@localhost:5433/hoopsai_test",
+    "postgresql+psycopg://hoopsai:hoopsai@127.0.0.1:5433/hoopsai_test",
 )
 os.environ["HOOPSAI_DATABASE_URL"] = TEST_DATABASE_URL
 
@@ -25,6 +25,7 @@ if sys.platform == "win32":
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).parent / "fixtures"
 DATA_TABLES = (
+    "serving.live_wp_snapshots",
     "serving.predictions",
     "serving.model_versions",
     "features.game_features",

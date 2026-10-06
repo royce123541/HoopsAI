@@ -35,6 +35,7 @@ class GameSummary(BaseModel):
     home_score: int | None
     away_score: int | None
     prediction: PredictionSummary | None
+    live: "LiveSummary | None" = None  # latest in-game probability while a game is live
 
 
 class Slate(BaseModel):
@@ -135,3 +136,30 @@ class ModelInfo(BaseModel):
     reliability: list[ReliabilityBin]
     acceptance: dict[str, bool]
     top_features: list[FeatureImportance]
+
+
+class WinProbPoint(BaseModel):
+    action_id: int
+    period: int
+    clock_seconds: float
+    elapsed_seconds: float
+    score_home: int
+    score_away: int
+    possession: int  # 1 home, -1 away, 0 unknown
+    home_win_prob: float
+    description: str | None
+
+
+class WinProbSeries(BaseModel):
+    game_id: str
+    source: Literal["live", "replay"] | None  # live data wins over a replay
+    model_version: str | None
+    points: list[WinProbPoint]
+
+
+class LiveSummary(BaseModel):
+    home_win_prob: float
+    period: int
+    clock_seconds: float
+    score_home: int
+    score_away: int

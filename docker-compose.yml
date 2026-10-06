@@ -1,5 +1,4 @@
 # Local dev stack. Works without a .env file; copy .env.example to .env to override defaults.
-# The `live` service (in-game poller) is added in milestone M4.
 
 x-backend-env: &backend-env
   HOOPSAI_ENV: ${HOOPSAI_ENV:-dev}
@@ -38,7 +37,7 @@ services:
       mlflow server --host 0.0.0.0 --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db
       --artifacts-destination /mlflow/artifacts
-      --allowed-hosts mlflow,mlflow:5000,localhost,localhost:5000
+      --allowed-hosts mlflow,mlflow:5000,localhost,localhost:5000,127.0.0.1,127.0.0.1:5000
     ports: ["5000:5000"]
     volumes: [mlflow:/mlflow]
 
@@ -64,10 +63,19 @@ services:
       api: { condition: service_healthy }  # api applies migrations on start
     restart: unless-stopped
 
+  live:
+    build: ./backend
+    command: hoopsai live
+    environment: *backend-env
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped  # also retries until an in-game model has been trained
+
   web:
     build: ./web
     environment:
-      API_INTERNAL_URL: http://api:8000
+      API_INTERNAL_URL: http://api:8000  # server-side requests, inside the compose network
+      API_PUBLIC_WS_URL: ws://localhost:8000  # the browser's WebSocket connection
     ports: ["3000:3000"]
     depends_on:
       api: { condition: service_healthy }

@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import time
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -143,6 +144,117 @@ def train(
         r = result.registration
         typer.echo(f"\nregistered hoopsai-pregame v{r.version} (run {r.run_id})")
         typer.echo(f"promoted to production: {r.promoted} ({r.reason})")
+
+
+@app.command("train-ingame")
+def train_ingame(
+    from_season: Annotated[
+        str, typer.Option("--from", help="First season of play-by-play to train on.")
+    ] = "2015-16",  # hoopsai.ml.ingame.FIRST_TRAINING_SEASON
+    register: Annotated[bool, typer.Option(help="Log to MLflow and register the model.")] = True,
+) -> None:
+    """Train the in-game model on play-by-play states; the newest season is held out."""
+    from hoopsai.config import get_settings
+    from hoopsai.db.session import get_sync_engine
+    from hoopsai.ml import ingame, registry
+
+    engine = get_sync_engine()
+    seasons = [s for s in ingame.seasons_with_pbp(engine) if s >= _season(from_season)]
+    if len(seasons) < 2:
+        raise typer.BadParameter(f"need play-by-play for 2+ seasons, have {seasons}")
+    frame = ingame.build_training_frame(engine, seasons)
+    model, report = ingame.train_and_evaluate(frame)
+    typer.echo(ingame.format_report(report))
+    if register:
+        r = registry.log_and_register_ingame(
+            model, report, ingame.DEFAULT_PARAMS, get_settings().mlflow_tracking_uri
+        )
+        typer.echo(f"\nregistered hoopsai-ingame v{r.version}; promoted: {r.promoted} ({r.reason})")
+
+
+@app.command()
+def live(
+    watch: Annotated[
+        str | None,
+        typer.Option(help="Print win probability for one game without storing anything."),
+    ] = None,
+) -> None:
+    """Run the live poller: in-game win probability for every live game."""
+    import redis
+
+    from hoopsai.config import get_settings
+    from hoopsai.db.session import get_sync_engine
+    from hoopsai.live import service
+    from hoopsai.live.source import StatsLiveSource
+    from hoopsai.live.tracker import LiveTracker
+    from hoopsai.ml.registry import load_production_ingame
+
+    settings = get_settings()
+    engine = get_sync_engine()
+    while True:
+        try:
+            model, version = load_production_ingame(settings.mlflow_tracking_uri)
+            break
+        except LookupError:
+            if watch:
+                raise
+            logging.getLogger(__name__).warning(
+                "no production in-game model yet (run `hoopsai train-ingame`); retrying in 60s"
+            )
+            time.sleep(60)
+    source = StatsLiveSource()
+    if watch:
+        tracker = LiveTracker(model, service.pregame_probability(engine, watch))
+        points = tracker.update(source.play_by_play(watch))
+        for p in points[-10:]:
+            typer.echo(
+                f"Q{p.period} {p.clock_seconds:5.1f}s  {p.score_away}-{p.score_home}  "
+                f"home {p.home_win_prob:.1%}  {p.description or ''}"
+            )
+        typer.echo(f"{len(points)} states")
+        return
+    publisher = redis.Redis.from_url(settings.redis_url)
+    recorder = service.Recorder(engine, publisher.publish, version, source="live")
+    service.LivePoller(engine, source, model, recorder).run_forever()
+
+
+@app.command()
+def replay(
+    game_id: str,
+    speed: Annotated[float, typer.Option(help="Game seconds per real second.")] = 30.0,
+) -> None:
+    """Replay a finished game through the live pipeline (snapshots, Redis, WebSocket)."""
+    import redis
+    from sqlalchemy import select
+
+    from hoopsai.config import get_settings
+    from hoopsai.db.models import ApiResponse
+    from hoopsai.db.session import get_sync_engine
+    from hoopsai.ingest.store import decompress_payload
+    from hoopsai.live import service
+    from hoopsai.ml.registry import load_production_ingame
+    from hoopsai.sources.base import request_key
+    from hoopsai.sources.nba_stats.client import NbaStatsSource
+    from hoopsai.sources.nba_stats.parse import parse_play_by_play
+
+    settings = get_settings()
+    engine = get_sync_engine()
+    key = request_key("nba_stats", "playbyplayv3", {"game_id": game_id})
+    with engine.connect() as conn:
+        blob = conn.scalar(select(ApiResponse.payload_gz).where(ApiResponse.request_key == key))
+    payload = (
+        decompress_payload(blob) if blob else NbaStatsSource().fetch_play_by_play(game_id).payload
+    )
+    events = parse_play_by_play(payload)
+    model, version = load_production_ingame(settings.mlflow_tracking_uri)
+    publisher = redis.Redis.from_url(settings.redis_url)
+    recorder = service.Recorder(engine, publisher.publish, version, source="replay")
+    minutes = max(e["period"] for e in events) * 12 * 60 / speed / 60
+    typer.echo(f"replaying {game_id} ({len(events)} events) at {speed:g}x, about {minutes:.1f} min")
+    n = service.replay(
+        events, game_id, model, service.pregame_probability(engine, game_id), recorder, speed=speed
+    )
+    typer.echo(f"done: {n} points")
 
 
 @app.command()

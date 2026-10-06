@@ -11,6 +11,7 @@ from hoopsai.api.schemas import (
     Factor,
     GameDetail,
     GameSummary,
+    LiveSummary,
     PredictionSummary,
     Slate,
     TeamRef,
@@ -27,12 +28,19 @@ GAMES_SQL = """
     SELECT g.game_id, g.game_date, g.tip_time_utc, g.status, g.season, g.season_type,
            coalesce(g.is_neutral, false) AS is_neutral, g.home_team_id, g.away_team_id,
            g.home_score, g.away_score,
-           p.home_win_prob, p.model_version, p.created_at, p.made_before_tip, p.factors
+           p.home_win_prob, p.model_version, p.created_at, p.made_before_tip, p.factors,
+           l.home_win_prob AS live_prob, l.period AS live_period,
+           l.clock_seconds AS live_clock, l.score_home AS live_home, l.score_away AS live_away
     FROM core.games g
     LEFT JOIN LATERAL (
         SELECT * FROM serving.predictions p
         WHERE p.game_id = g.game_id ORDER BY p.created_at DESC, p.id DESC LIMIT 1
     ) p ON true
+    LEFT JOIN LATERAL (
+        SELECT * FROM serving.live_wp_snapshots l
+        WHERE l.game_id = g.game_id AND l.source = 'live' AND g.status = 'live'
+        ORDER BY l.action_id DESC, l.id DESC LIMIT 1
+    ) l ON true
 """
 
 # (feature suffix, label, higher is better) for the side-by-side comparison table.
@@ -72,6 +80,15 @@ def _summary(row: RowMapping, teams: dict[int, TeamRef]) -> dict[str, Any]:
         "home_score": row["home_score"],
         "away_score": row["away_score"],
         "prediction": prediction,
+        "live": None
+        if row["live_prob"] is None
+        else LiveSummary(
+            home_win_prob=row["live_prob"],
+            period=row["live_period"],
+            clock_seconds=row["live_clock"],
+            score_home=row["live_home"],
+            score_away=row["live_away"],
+        ),
     }
 
 

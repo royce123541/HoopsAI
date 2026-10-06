@@ -1,59 +1,102 @@
-import { connection } from "next/server";
+import Link from "next/link";
 
-import { getHealth } from "@/lib/api";
+import { GameRow } from "@/components/GameRow";
+import { getSlate } from "@/lib/api";
+import { longDate, shortDate } from "@/lib/format";
 
-const STATUS_STYLES = {
-  ok: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-  degraded: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  offline: "bg-red-500/15 text-red-600 dark:text-red-400",
-} as const;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-export default async function Home() {
-  await connection(); // render per request; never bake API status in at build time
-  const health = await getHealth();
-  const status = health?.status ?? "offline";
+export default async function SlatePage({ searchParams }: PageProps<"/">) {
+  const { date } = await searchParams;
+  const requested =
+    typeof date === "string" && ISO_DATE.test(date) ? date : undefined;
+  const slate = await getSlate(requested);
+  if (!slate) throw new Error("The schedule is unavailable right now.");
+
+  const versions = new Set(
+    slate.games.flatMap((g) =>
+      g.prediction ? [g.prediction.model_version] : [],
+    ),
+  );
+  const count = slate.games.length;
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-4 py-16">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-4xl font-semibold tracking-tight">HoopsAI</h1>
-        <p className="text-foreground/70">
-          Machine-learned win probabilities for every NBA game: before tip-off and live.
+    <div className="flex flex-col gap-6">
+      <nav
+        aria-label="Dates"
+        className="flex items-center justify-between gap-4 text-[15px]"
+      >
+        {slate.prev_date ? (
+          <Link
+            href={`/?date=${slate.prev_date}`}
+            className="text-ink-2 hover:text-ink"
+          >
+            ‹ {shortDate(slate.prev_date)}
+          </Link>
+        ) : (
+          <span />
+        )}
+        {slate.next_date ? (
+          <Link
+            href={`/?date=${slate.next_date}`}
+            className="text-ink-2 hover:text-ink"
+          >
+            {shortDate(slate.next_date)} ›
+          </Link>
+        ) : (
+          <span />
+        )}
+      </nav>
+
+      <header>
+        <h1 className="font-condensed text-5xl font-bold tracking-tight">
+          {longDate(slate.date)}
+        </h1>
+        <p className="mt-1 text-ink-2">
+          {count === 0
+            ? "No NBA games on this date."
+            : `${count} ${count === 1 ? "game" : "games"}${
+                versions.size
+                  ? `, predictions from model v${[...versions].join(", v")}`
+                  : ""
+              }`}
         </p>
       </header>
 
-      <section
-        aria-labelledby="system-status"
-        className="rounded-xl border border-foreground/10 p-6"
-      >
-        <div className="flex items-center justify-between gap-4">
-          <h2 id="system-status" className="text-lg font-medium">
-            System status
-          </h2>
-          <span
-            data-testid="api-status"
-            className={`rounded-full px-3 py-1 text-sm font-medium ${STATUS_STYLES[status]}`}
-          >
-            {status}
-          </span>
-        </div>
-        {health ? (
-          <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-            <dt className="text-foreground/60">API version</dt>
-            <dd className="font-mono">{health.version}</dd>
-            {Object.entries(health.checks).map(([name, result]) => (
-              <div key={name} className="contents">
-                <dt className="capitalize text-foreground/60">{name}</dt>
-                <dd className="font-mono">{result}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : (
-          <p className="mt-4 text-sm text-foreground/70">
-            The API is unreachable. Start it with <code>docker compose up</code>.
+      {count === 0 ? (
+        slate.next_date && (
+          <p>
+            <Link
+              href={`/?date=${slate.next_date}`}
+              className="font-medium text-ink underline underline-offset-4"
+            >
+              See the games on {longDate(slate.next_date)}
+            </Link>
           </p>
-        )}
-      </section>
-    </main>
+        )
+      ) : (
+        <>
+          <div
+            className="flex items-center gap-5 text-sm text-ink-2"
+            aria-hidden
+          >
+            <span className="flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-sm bg-away" /> Away
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-sm bg-home" /> Home
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="h-3 w-px bg-ink-2" /> Even (50%)
+            </span>
+          </div>
+          <ul className="-mx-3 divide-y divide-line border-y border-line">
+            {slate.games.map((game) => (
+              <GameRow key={game.game_id} game={game} />
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }

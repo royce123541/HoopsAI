@@ -1,26 +1,94 @@
 @import "tailwindcss";
 
+/*
+ * Tokens. Home = blue, away = orange: categorical slots 1-2 of the reference data-viz
+ * palette, validated (CVD, contrast) on these surfaces in both modes. Grey marks the Elo
+ * baseline, so blue reads as "the model" wherever teams are not involved.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  color-scheme: light;
+  --page: #f3f4f5;
+  --surface: #fcfcfb;
+  --ink: #14171a;
+  --ink-2: #4a4f55;
+  --muted: #6b7076;
+  --grid: #e3e5e8;
+  --axis: #c5c9ce;
+  --border: rgba(20, 23, 26, 0.1);
+  --home: #2a78d6;
+  --away: #eb6834;
+  --baseline-series: #858b91;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: dark;
+    --page: #0f1113;
+    --surface: #1a1b1d;
+    --ink: #f4f5f6;
+    --ink-2: #b9bec4;
+    --muted: #8b9096;
+    --grid: #2b2e31;
+    --axis: #3a3e42;
+    --border: rgba(255, 255, 255, 0.1);
+    --home: #3987e5;
+    --away: #d95926;
+    --baseline-series: #7d838a;
   }
 }
 
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-grid: var(--grid);
+  --color-axis: var(--axis);
+  --color-line: var(--border);
+  --color-home: var(--home);
+  --color-away: var(--away);
+  --color-baseline: var(--baseline-series);
+  --font-sans: var(--font-barlow), system-ui, sans-serif;
+  --font-condensed:
+    var(--font-barlow-condensed), var(--font-barlow), system-ui, sans-serif;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "kern";
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--home);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one orchestrated motion: split bars grow outward from the mid-court line. */
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+.grow-from-right {
+  transform-origin: right;
+  animation: grow 450ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.grow-from-left {
+  transform-origin: left;
+  animation: grow 450ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .grow-from-right,
+  .grow-from-left {
+    animation: none;
+  }
 }

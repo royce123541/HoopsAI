@@ -1,12 +1,13 @@
-"""MLflow tracking and model registry for the pre-game model.
+"""MLflow tracking and model registry for the pre-game and in-game models.
 
-Each training run logs params, backtest metrics and the model, and registers a new version
-of `hoopsai-pregame`. The `production` alias moves to it only if it passes the acceptance
-checks and beats the current production version's out-of-sample log loss on the same, most
-recent backtest season (both numbers come from walk-forward runs that never saw it)."""
+Each training run logs params, metrics and the model, and registers a new version. The
+`production` alias moves to it only if it passes its acceptance checks and beats the current
+production version's out-of-sample log loss on the same held-out season (pre-game: the most
+recent walk-forward backtest season; in-game: the newest season, held out of training)."""
 
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import version as pkg_version
 from typing import Any
@@ -19,15 +20,24 @@ from mlflow.exceptions import MlflowException
 from mlflow.pyfunc.model import PythonModel
 
 from hoopsai.ml.backtest import BacktestReport
+from hoopsai.ml.ingame import InGameModel, InGameReport
 from hoopsai.ml.pregame import PregameModel
 
 log = logging.getLogger(__name__)
 
 MODEL_NAME = "hoopsai-pregame"
 EXPERIMENT = "hoopsai-pregame"
+INGAME_MODEL_NAME = "hoopsai-ingame"
+INGAME_EXPERIMENT = "hoopsai-ingame"
 PRODUCTION_ALIAS = "production"
 
 os.environ.setdefault("MLFLOW_DISABLE_AGENT_HINT", "1")
+
+PIP_REQUIREMENTS = [
+    f"{pkg}=={pkg_version(pkg)}" for pkg in ("lightgbm", "scikit-learn", "pandas", "numpy")
+]
+
+Decision = tuple[bool, str]
 
 
 class PregamePyfunc(PythonModel):
@@ -42,6 +52,20 @@ class PregamePyfunc(PythonModel):
         return [float(p) for p in self.model.predict_proba(model_input)]
 
 
+class InGamePyfunc(PythonModel):
+    """MLflow wrapper; input rows are game states plus a `pregame_prob` column."""
+
+    def __init__(self, model: InGameModel) -> None:
+        self.model = model
+
+    def predict(
+        self, context: Any, model_input: pd.DataFrame, params: dict[str, Any] | None = None
+    ) -> list[float]:
+        return [
+            float(p) for p in self.model.predict_proba(model_input, model_input["pregame_prob"])
+        ]
+
+
 @dataclass
 class Registration:
     run_id: str
@@ -54,37 +78,81 @@ def _metric_key(season: int) -> str:
     return f"backtest_logloss_{season}"
 
 
-def _production(client: MlflowClient) -> ModelVersion | None:
+def _production(client: MlflowClient, name: str = MODEL_NAME) -> ModelVersion | None:
     try:
-        return client.get_model_version_by_alias(MODEL_NAME, PRODUCTION_ALIAS)
+        return client.get_model_version_by_alias(name, PRODUCTION_ALIAS)
     except MlflowException:
         return None
 
 
-def promotion_decision(report: BacktestReport, production: ModelVersion | None) -> tuple[bool, str]:
-    failed = [k for k, ok in report.acceptance().items() if not ok]
+def _compare(
+    acceptance: dict[str, bool], season: int, ours: float, production: ModelVersion | None
+) -> Decision:
+    failed = [k for k, ok in acceptance.items() if not ok]
     if failed:
         return False, f"failed acceptance: {', '.join(failed)}"
     if production is None:
         return True, "no production model yet"
-    latest = report.seasons[-1]
-    theirs = production.tags.get(_metric_key(latest.season))
+    theirs = production.tags.get(_metric_key(season))
     if theirs is None:
-        return True, f"production v{production.version} was not evaluated on {latest.season}"
-    ours = latest.model["logloss"]
+        return True, f"production v{production.version} was not evaluated on {season}"
     if ours < float(theirs):
         return True, f"log loss {ours:.4f} < production v{production.version} {float(theirs):.4f}"
     return False, f"log loss {ours:.4f} >= production v{production.version} {float(theirs):.4f}"
 
 
+def promotion_decision(report: BacktestReport, production: ModelVersion | None) -> Decision:
+    latest = report.seasons[-1]
+    return _compare(report.acceptance(), latest.season, latest.model["logloss"], production)
+
+
+def ingame_promotion_decision(report: InGameReport, production: ModelVersion | None) -> Decision:
+    return _compare(report.acceptance(), report.test_season, report.model["logloss"], production)
+
+
+def _register(
+    *,
+    name: str,
+    experiment: str,
+    tracking_uri: str,
+    python_model: PythonModel,
+    log_run: Callable[[], None],
+    tags: dict[str, str],
+    decide: Callable[[ModelVersion | None], Decision],
+) -> Registration:
+    """Log a run (params/metrics via `log_run`) and the model, register a version, tag it,
+    and move the production alias if `decide` says so."""
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment)
+    client = MlflowClient()
+    with mlflow.start_run() as run:
+        log_run()
+        info = mlflow.pyfunc.log_model(
+            name="model",
+            python_model=python_model,
+            registered_model_name=name,
+            pip_requirements=PIP_REQUIREMENTS,
+        )
+    version = str(info.registered_model_version)
+    for key, value in tags.items():
+        client.set_model_version_tag(name, version, key, value)
+    promote, reason = decide(_production(client, name))
+    if promote:
+        client.set_registered_model_alias(name, PRODUCTION_ALIAS, version)
+    client.set_model_version_tag(name, version, "promotion", reason)
+    log.info("registered %s v%s (promoted=%s: %s)", name, version, promote, reason)
+    return Registration(run_id=run.info.run_id, version=version, promoted=promote, reason=reason)
+
+
+def _importance(features: list[str], gains: Any) -> dict[str, float]:
+    pairs = zip(features, (float(g) for g in gains), strict=True)
+    return dict(sorted(pairs, key=lambda kv: -kv[1]))
+
+
 def log_and_register(
     model: PregameModel, report: BacktestReport, params: dict[str, Any], tracking_uri: str
 ) -> Registration:
-    mlflow.set_tracking_uri(tracking_uri)
-    mlflow.set_experiment(EXPERIMENT)
-    client = MlflowClient()
-
-    with mlflow.start_run() as run:
+    def log_run() -> None:
         mlflow.log_params({f"lgbm_{k}": v for k, v in params.items()})
         mlflow.log_params(
             {
@@ -101,45 +169,70 @@ def log_and_register(
             mlflow.log_metrics({f"s{s.season}_model_{k}": v for k, v in s.model.items()})
             mlflow.log_metrics({f"s{s.season}_elo_{k}": v for k, v in s.elo.items()})
         mlflow.log_dict(report.to_dict(), "backtest.json")
-        importance = dict(
-            zip(
-                model.features,
-                (float(g) for g in model.estimator.booster_.feature_importance("gain")),
-                strict=True,
-            )
-        )
-        mlflow.log_dict(dict(sorted(importance.items(), key=lambda kv: -kv[1])), "importance.json")
-        info = mlflow.pyfunc.log_model(
-            name="model",
-            python_model=PregamePyfunc(model),
-            registered_model_name=MODEL_NAME,
-            pip_requirements=[
-                f"{pkg}=={pkg_version(pkg)}"
-                for pkg in ("lightgbm", "scikit-learn", "pandas", "numpy")
-            ],
-        )
+        gains = model.estimator.booster_.feature_importance("gain")
+        mlflow.log_dict(_importance(model.features, gains), "importance.json")
 
-    version = str(info.registered_model_version)
     # Full precision (str(float) round-trips): rounding could make an identical score "better".
     tags = {_metric_key(s.season): str(s.model["logloss"]) for s in report.seasons}
     tags |= {"feature_version": model.feature_version, "calibration": model.calibration}
-    for key, value in tags.items():
-        client.set_model_version_tag(MODEL_NAME, version, key, value)
+    return _register(
+        name=MODEL_NAME,
+        experiment=EXPERIMENT,
+        tracking_uri=tracking_uri,
+        python_model=PregamePyfunc(model),
+        log_run=log_run,
+        tags=tags,
+        decide=lambda production: promotion_decision(report, production),
+    )
 
-    promote, reason = promotion_decision(report, _production(client))
-    if promote:
-        client.set_registered_model_alias(MODEL_NAME, PRODUCTION_ALIAS, version)
-    client.set_model_version_tag(MODEL_NAME, version, "promotion", reason)
-    log.info("registered %s v%s (promoted=%s: %s)", MODEL_NAME, version, promote, reason)
-    return Registration(run_id=run.info.run_id, version=version, promoted=promote, reason=reason)
+
+def log_and_register_ingame(
+    model: InGameModel, report: InGameReport, params: dict[str, Any], tracking_uri: str
+) -> Registration:
+    def log_run() -> None:
+        mlflow.log_params({f"lgbm_{k}": v for k, v in params.items()})
+        mlflow.log_params(
+            {
+                "train_seasons": f"{model.train_seasons[0]}-{model.train_seasons[-1]}",
+                "test_season": report.test_season,
+                "features": ",".join(model.features),
+            }
+        )
+        mlflow.log_metrics({f"test_model_{k}": v for k, v in report.model.items()})
+        mlflow.log_metrics({f"test_pregame_only_{k}": v for k, v in report.pregame_only.items()})
+        for quarter, m in report.by_quarter.items():
+            mlflow.log_metrics({f"test_{quarter}_{k}": v for k, v in m.items()})
+        mlflow.log_dict(report.to_dict(), "evaluation.json")
+        gains = model.estimator.booster_.feature_importance("gain")
+        mlflow.log_dict(_importance(model.features, gains), "importance.json")
+
+    return _register(
+        name=INGAME_MODEL_NAME,
+        experiment=INGAME_EXPERIMENT,
+        tracking_uri=tracking_uri,
+        python_model=InGamePyfunc(model),
+        log_run=log_run,
+        tags={_metric_key(report.test_season): str(report.model["logloss"])},
+        decide=lambda production: ingame_promotion_decision(report, production),
+    )
+
+
+def _load(tracking_uri: str, name: str) -> tuple[Any, str]:
+    mlflow.set_tracking_uri(tracking_uri)
+    production = _production(MlflowClient(), name)
+    if production is None:
+        raise LookupError(f"no {name}@{PRODUCTION_ALIAS} model registered")
+    pyfunc = mlflow.pyfunc.load_model(f"models:/{name}@{PRODUCTION_ALIAS}")
+    return pyfunc.unwrap_python_model().model, str(production.version)
 
 
 def load_production(tracking_uri: str) -> tuple[PregameModel, str]:
-    """The current production model and its registry version (used by serving in M3)."""
-    mlflow.set_tracking_uri(tracking_uri)
-    production = _production(MlflowClient())
-    if production is None:
-        raise LookupError(f"no {MODEL_NAME}@{PRODUCTION_ALIAS} model registered")
-    pyfunc = mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}@{PRODUCTION_ALIAS}")
-    wrapper: PregamePyfunc = pyfunc.unwrap_python_model()
-    return wrapper.model, str(production.version)
+    """The production pre-game model and its registry version."""
+    model, version = _load(tracking_uri, MODEL_NAME)
+    return model, version
+
+
+def load_production_ingame(tracking_uri: str) -> tuple[InGameModel, str]:
+    """The production in-game model and its registry version."""
+    model, version = _load(tracking_uri, INGAME_MODEL_NAME)
+    return model, version

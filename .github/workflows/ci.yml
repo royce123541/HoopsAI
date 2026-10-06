@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hoopsai
+          POSTGRES_PASSWORD: hoopsai
+          POSTGRES_DB: hoopsai
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hoopsai"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      # Tests create and migrate this database themselves (tests/conftest.py).
+      HOOPSAI_TEST_DATABASE_URL: postgresql+psycopg://hoopsai:hoopsai@127.0.0.1:5432/hoopsai_test
+      MLFLOW_DISABLE_AGENT_HINT: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv sync --frozen
+      - name: Lint
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy hoopsai tests
+      - name: Migrations match the models
+        env:
+          HOOPSAI_DATABASE_URL: postgresql+psycopg://hoopsai:hoopsai@127.0.0.1:5432/hoopsai
+        run: uv run alembic upgrade head && uv run alembic check
+      - name: Tests
+        run: uv run pytest
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Format
+        run: npx prettier --check .
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+
+  images:
+    # The Dockerfiles are what actually runs; make sure they still build.
+    runs-on: ubuntu-latest
+    needs: [backend, web]
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t hoopsai-backend backend
+      - run: docker build -t hoopsai-web web

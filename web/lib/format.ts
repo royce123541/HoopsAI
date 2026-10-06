@@ -78,3 +78,15 @@ export function featureValue(
     return value ? "Yes" : "No";
   return `${sign}${value.toFixed(1)}`;
 }
+
+/** "Q3 4:12", "OT 0:35", "2OT 1:02" from period and seconds left in it. */
+export function gameClock(period: number, clockSeconds: number): string {
+  const label =
+    period <= 4 ? `Q${period}` : period === 5 ? "OT" : `${period - 4}OT`;
+  const whole = Math.max(0, Math.ceil(clockSeconds));
+  const clock =
+    clockSeconds < 60 && clockSeconds % 1 !== 0
+      ? clockSeconds.toFixed(1)
+      : `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+  return `${label} ${clock}`;
+}

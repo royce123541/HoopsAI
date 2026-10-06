@@ -115,6 +115,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{game_id}/winprob": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Winprob
+         * @description Every in-game win-probability point recorded for the game (empty before tip-off).
+         */
+        get: operations["get_winprob_api_games__game_id__winprob_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -201,6 +221,7 @@ export interface components {
             /** Away Score */
             away_score: number | null;
             prediction: components["schemas"]["PredictionSummary"] | null;
+            live?: components["schemas"]["LiveSummary"] | null;
             /** Factors */
             factors: components["schemas"]["Factor"][];
             /** Comparison */
@@ -238,6 +259,7 @@ export interface components {
             /** Away Score */
             away_score: number | null;
             prediction: components["schemas"]["PredictionSummary"] | null;
+            live?: components["schemas"]["LiveSummary"] | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -257,6 +279,19 @@ export interface components {
             checks: {
                 [key: string]: string;
             };
+        };
+        /** LiveSummary */
+        LiveSummary: {
+            /** Home Win Prob */
+            home_win_prob: number;
+            /** Period */
+            period: number;
+            /** Clock Seconds */
+            clock_seconds: number;
+            /** Score Home */
+            score_home: number;
+            /** Score Away */
+            score_away: number;
         };
         /** Metrics */
         Metrics: {
@@ -426,6 +461,38 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** WinProbPoint */
+        WinProbPoint: {
+            /** Action Id */
+            action_id: number;
+            /** Period */
+            period: number;
+            /** Clock Seconds */
+            clock_seconds: number;
+            /** Elapsed Seconds */
+            elapsed_seconds: number;
+            /** Score Home */
+            score_home: number;
+            /** Score Away */
+            score_away: number;
+            /** Possession */
+            possession: number;
+            /** Home Win Prob */
+            home_win_prob: number;
+            /** Description */
+            description: string | null;
+        };
+        /** WinProbSeries */
+        WinProbSeries: {
+            /** Game Id */
+            game_id: string;
+            /** Source */
+            source: ("live" | "replay") | null;
+            /** Model Version */
+            model_version: string | null;
+            /** Points */
+            points: components["schemas"]["WinProbPoint"][];
+        };
     };
     responses: never;
     parameters: never;
@@ -584,6 +651,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelInfo"];
+                };
+            };
+        };
+    };
+    get_winprob_api_games__game_id__winprob_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                game_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WinProbSeries"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

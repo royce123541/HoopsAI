@@ -1,12 +1,15 @@
 import Link from "next/link";
 
 import type { GameSummary } from "@/lib/api";
-import { splitPercents, tipTime } from "@/lib/format";
+import { gameClock, splitPercents, tipTime } from "@/lib/format";
 import { SplitBar } from "./SplitBar";
 
 function statusText(game: GameSummary): string {
   if (game.status === "final") return "Final";
-  if (game.status === "live") return "Live";
+  if (game.status === "live")
+    return game.live
+      ? `Live, ${gameClock(game.live.period, game.live.clock_seconds)}`
+      : "Live";
   return tipTime(game.tip_time_utc);
 }
 
@@ -38,6 +41,8 @@ function caption(game: GameSummary): string {
 }
 
 export function GameRow({ game }: { game: GameSummary }) {
+  // While a game is live the bar follows the in-game estimate, not the pre-game one.
+  const prob = game.live?.home_win_prob ?? game.prediction?.home_win_prob;
   return (
     <li>
       <Link
@@ -46,19 +51,15 @@ export function GameRow({ game }: { game: GameSummary }) {
       >
         <span className="text-sm font-medium text-ink-2 sm:pt-1">
           {statusText(game)}
-          {game.status === "final" && game.home_score !== null && (
+          {game.status !== "scheduled" && game.home_score !== null && (
             <span className="tabular ml-2 text-ink">
               {game.away_score}–{game.home_score}
             </span>
           )}
         </span>
         <span className="block min-w-0">
-          {game.prediction ? (
-            <SplitBar
-              home={game.home}
-              away={game.away}
-              homeProb={game.prediction.home_win_prob}
-            />
+          {prob !== undefined ? (
+            <SplitBar home={game.home} away={game.away} homeProb={prob} />
           ) : (
             <span className="flex items-baseline justify-between py-2 font-condensed text-lg font-semibold text-ink-2">
               <span>{game.away.abbreviation}</span>

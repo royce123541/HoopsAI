@@ -3,13 +3,14 @@ import { notFound } from "next/navigation";
 
 import { ComparisonTable } from "@/components/ComparisonTable";
 import { FactorBars } from "@/components/FactorBars";
+import { LiveWinProb } from "@/components/LiveWinProb";
 import { SplitBar } from "@/components/SplitBar";
-import { getGame } from "@/lib/api";
+import { getGame, getWinProb, publicWsUrl } from "@/lib/api";
 import { longDate, shortDate, splitPercents, tipTime } from "@/lib/format";
 
 export default async function GamePage({ params }: PageProps<"/games/[id]">) {
   const { id } = await params;
-  const game = await getGame(id);
+  const [game, series] = await Promise.all([getGame(id), getWinProb(id)]);
   if (!game) notFound();
 
   const { home, away, prediction } = game;
@@ -41,8 +42,8 @@ export default async function GamePage({ params }: PageProps<"/games/[id]">) {
       </div>
 
       <section aria-labelledby="chance">
-        <h2 id="chance" className="sr-only">
-          Chance to win
+        <h2 id="chance" className="mb-2 text-sm font-medium text-ink-2">
+          Before tip-off
         </h2>
         {prediction && pct && favorite ? (
           <>
@@ -73,6 +74,18 @@ export default async function GamePage({ params }: PageProps<"/games/[id]">) {
           </p>
         )}
       </section>
+
+      {/* Always mounted: it renders once points exist (a game tips off or a replay starts). */}
+      {series && (
+        <LiveWinProb
+          gameId={game.game_id}
+          wsBase={publicWsUrl()}
+          initial={series}
+          home={home}
+          away={away}
+          live={game.status === "live"}
+        />
+      )}
 
       {prediction && (
         <section aria-labelledby="why">

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { GameRow } from "@/components/GameRow";
 import { getSlate } from "@/lib/api";
 import { longDate, shortDate } from "@/lib/format";
@@ -22,6 +23,9 @@ export default async function SlatePage({ searchParams }: PageProps<"/">) {
 
   return (
     <div className="flex flex-col gap-6">
+      {slate.games.some((g) => g.status === "live") && (
+        <AutoRefresh seconds={20} />
+      )}
       <nav
         aria-label="Dates"
         className="flex items-center justify-between gap-4 text-[15px]"

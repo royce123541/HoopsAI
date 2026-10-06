@@ -1,5 +1,6 @@
 // Server-side API client. API_INTERNAL_URL is read at request time, so one built image works
-// in any environment (compose: http://api:8000, local dev: http://localhost:8000).
+// in any environment (compose: http://api:8000, local dev: http://127.0.0.1:8000; not
+// localhost, whose IPv6 Docker port forwarding can stall server-side requests).
 // Types come from the API's OpenAPI schema: `npm run gen:api` regenerates lib/api-types.ts.
 import { connection } from "next/server";
 
@@ -20,9 +21,12 @@ export type EloPoint = Schemas["EloPoint"];
 export type ReliabilityBin = Schemas["ReliabilityBin"];
 export type SeasonMetrics = Schemas["SeasonMetrics"];
 export type FeatureImportance = Schemas["FeatureImportance"];
+export type WinProbSeries = Schemas["WinProbSeries"];
+export type WinProbPoint = Schemas["WinProbPoint"];
+export type LiveSummary = Schemas["LiveSummary"];
 
 function apiBaseUrl(): string {
-  return process.env.API_INTERNAL_URL ?? "http://localhost:8000";
+  return process.env.API_INTERNAL_URL ?? "http://127.0.0.1:8000";
 }
 
 /** GET a JSON resource; null on 404, an error (shown by app/error.tsx) otherwise. */
@@ -46,3 +50,10 @@ export const getTeams = () => get<TeamListItem[]>("/teams");
 export const getTeam = (id: string) =>
   get<TeamDetail>(`/teams/${encodeURIComponent(id)}`);
 export const getModel = () => get<ModelInfo>("/model");
+export const getWinProb = (id: string) =>
+  get<WinProbSeries>(`/games/${encodeURIComponent(id)}/winprob`);
+
+/** WebSocket base URL as the browser sees the API (read at request time, not build time). */
+export function publicWsUrl(): string {
+  return process.env.API_PUBLIC_WS_URL ?? "ws://localhost:8000";
+}

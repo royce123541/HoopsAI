@@ -11,6 +11,7 @@ def test_scheduler_registers_ingestion_jobs_in_utc() -> None:
     assert by_id["daily_pipeline"].func is jobs.daily_pipeline
     assert by_id["ingest_schedule"].func is jobs.ingest_schedule
     assert by_id["retrain"].func is jobs.retrain
+    assert by_id["predict_pregame"].func is jobs.predict_pregame
 
     after = datetime(2026, 10, 6, 11, 0, tzinfo=UTC)
     assert by_id["daily_pipeline"].trigger.get_next_fire_time(None, after) == datetime(
@@ -22,4 +23,7 @@ def test_scheduler_registers_ingestion_jobs_in_utc() -> None:
     )
     assert by_id["ingest_schedule"].trigger.get_next_fire_time(None, after) == datetime(
         2026, 10, 6, 12, 0, tzinfo=UTC
+    )
+    assert by_id["predict_pregame"].trigger.get_next_fire_time(None, after) == datetime(
+        2026, 10, 6, 12, 5, tzinfo=UTC
     )

@@ -146,6 +146,39 @@ def train(
 
 
 @app.command()
+def predict(
+    on: Annotated[
+        str | None,
+        typer.Option(
+            "--date",
+            help="Score every game on this date (YYYY-MM-DD), even finished ones. "
+            "Default: upcoming games from today (US Eastern).",
+        ),
+    ] = None,
+    days: Annotated[int, typer.Option(help="Days ahead to score (without --date).")] = 7,
+) -> None:
+    """Score games with the production model and store predictions (serving.predictions)."""
+    from datetime import date as date_type
+
+    from hoopsai.config import get_settings
+    from hoopsai.db.session import get_sync_engine
+    from hoopsai.predict.pregame import predict_pregame
+
+    try:
+        start = date_type.fromisoformat(on) if on else None
+    except ValueError as exc:
+        raise typer.BadParameter(f"--date {on!r} is not YYYY-MM-DD") from exc
+    summary = predict_pregame(
+        get_sync_engine(),
+        get_settings().mlflow_tracking_uri,
+        start=start,
+        days=1 if start else days,
+        only_scheduled=start is None,
+    )
+    typer.echo(str(summary))
+
+
+@app.command()
 def version() -> None:
     """Print the package version."""
     from hoopsai import __version__

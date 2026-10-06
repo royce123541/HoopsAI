@@ -23,12 +23,21 @@ def ingest_daily() -> RunSummary:
 
 
 def daily_pipeline() -> RunSummary:
-    """Nightly: ingest yesterday's games, then rebuild features (Elo, form, schedule)."""
+    """Nightly: ingest yesterday's games, rebuild features (Elo, form, schedule), re-score."""
     from hoopsai.features.store import rebuild_features
 
     summary = ingest_daily()
     rebuild_features(get_sync_engine())
+    predict_pregame()
     return summary
+
+
+def predict_pregame() -> None:
+    """Score the coming week's games; unchanged predictions are not rewritten."""
+    from hoopsai.config import get_settings
+    from hoopsai.predict import pregame
+
+    pregame.predict_pregame(get_sync_engine(), get_settings().mlflow_tracking_uri)
 
 
 def retrain() -> None:

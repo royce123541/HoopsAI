@@ -177,3 +177,45 @@ class EloRating(Base):
     game_date: Mapped[date] = mapped_column(Date)
     elo_pre: Mapped[float] = mapped_column(Float)
     elo_post: Mapped[float | None] = mapped_column(Float)
+
+
+# ---------------------------------------------------------------- serving
+
+
+class ModelVersionSnapshot(Base):
+    """Metadata of a registered model version used for predictions, copied from MLflow so the
+    API never depends on the MLflow server at request time."""
+
+    __tablename__ = "model_versions"
+    __table_args__ = {"schema": "serving"}
+
+    version: Mapped[str] = mapped_column(Text, primary_key=True)
+    run_id: Mapped[str] = mapped_column(Text)
+    feature_version: Mapped[str] = mapped_column(Text)
+    calibration: Mapped[str] = mapped_column(Text)
+    train_seasons: Mapped[str] = mapped_column(Text)  # e.g. "2005-2025"
+    backtest: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    importance: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    first_used_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Prediction(Base):
+    """A pre-game win probability. Re-scoring appends a row only when the probability or the
+    model changes; the latest row per game is the current prediction."""
+
+    __tablename__ = "predictions"
+    __table_args__ = (
+        Index("ix_predictions_game_created", "game_id", "created_at"),
+        {"schema": "serving"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    game_id: Mapped[str] = mapped_column(ForeignKey("core.games.game_id"))
+    model_version: Mapped[str] = mapped_column(ForeignKey("serving.model_versions.version"))
+    feature_version: Mapped[str] = mapped_column(Text)
+    home_win_prob: Mapped[float] = mapped_column(Float)
+    factors: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)  # TreeSHAP, top by |impact|
+    made_before_tip: Mapped[bool] = mapped_column(Boolean)  # False for after-the-fact scoring
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

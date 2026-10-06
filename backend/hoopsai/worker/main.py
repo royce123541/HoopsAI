@@ -1,5 +1,4 @@
-"""Scheduled pipeline jobs (docs/ARCHITECTURE.md §3.5). Prediction and monitoring jobs join
-this schedule in M3 and M5."""
+"""Scheduled pipeline jobs (docs/ARCHITECTURE.md §3.5). Monitoring joins in M5."""
 
 import logging
 from datetime import UTC
@@ -21,6 +20,12 @@ def build_scheduler() -> BlockingScheduler:
     # 10:00 UTC is after the last West Coast games end (~07:00 UTC).
     scheduler.add_job(
         jobs.daily_pipeline, CronTrigger(hour=10, minute=0, timezone=UTC), id="daily_pipeline"
+    )
+    # Re-score every 2 hours: picks up schedule changes, tip times and newly promoted models.
+    scheduler.add_job(
+        jobs.predict_pregame,
+        CronTrigger(hour="*/2", minute=5, timezone=UTC),
+        id="predict_pregame",
     )
     scheduler.add_job(
         jobs.retrain,

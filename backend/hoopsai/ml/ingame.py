@@ -54,6 +54,18 @@ DEFAULT_PARAMS: dict[str, Any] = {
 # training window for `hoopsai train-ingame` and the weekly retrain.
 FIRST_TRAINING_SEASON = 2015
 
+# Compact dtypes for the ~6M-row training frame (2015-16 onward): about a quarter of the
+# default 64-bit size, and no per-play text (descriptions are only needed live, for display).
+STATE_DTYPES = {
+    "action_id": "int32",
+    "period": "int8",
+    "clock_seconds": "float32",
+    "seconds_remaining": "float32",
+    "score_home": "int16",
+    "score_away": "int16",
+    "possession": "int8",
+}
+
 # Events that never change score, clock-state or possession; they only duplicate rows.
 _NOISE_EVENTS = ("Substitution", "Timeout", "Instant Replay")
 
@@ -140,10 +152,15 @@ def load_season_states(engine: Engine, season: int) -> pd.DataFrame:
     frames = []
     for game_id, game_events in events.groupby("game_id", sort=False):
         rows = [tip_off_state(), *game_states(game_events.to_dict("records"))]
-        frame = pd.DataFrame([s.as_dict() for s in rows])
+        frame = pd.DataFrame([s.as_dict() for s in rows], columns=list(STATE_DTYPES))
+        frame = frame.astype(STATE_DTYPES)
         frame["game_id"] = game_id
         frames.append(frame)
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if not frames:
+        return pd.DataFrame()
+    states = pd.concat(frames, ignore_index=True)
+    states["game_id"] = states["game_id"].astype("category")
+    return states
 
 
 def build_training_frame(engine: Engine, seasons: list[int]) -> pd.DataFrame:
@@ -157,14 +174,17 @@ def build_training_frame(engine: Engine, seasons: list[int]) -> pd.DataFrame:
             log.warning("season %s has no play-by-play; skipping", season)
             continue
         states = states[states["game_id"].isin(pregame.index)]
-        states["season"] = season
-        states["pregame_prob"] = pregame.loc[states["game_id"]].to_numpy()
-        states["home_win"] = outcome.loc[states["game_id"]].to_numpy()
+        states["season"] = np.int16(season)
+        ids = states["game_id"].astype(str)
+        states["pregame_prob"] = pregame.loc[ids].to_numpy(dtype="float32")
+        states["home_win"] = outcome.loc[ids].to_numpy(dtype="float32")
         frames.append(states)
         log.info(
             "season %s: %d states from %d games", season, len(states), states["game_id"].nunique()
         )
-    return pd.concat(frames, ignore_index=True)
+    frame = pd.concat(frames, ignore_index=True)
+    frame["game_id"] = frame["game_id"].astype("category")  # categories differ per season
+    return frame
 
 
 # ---------------------------------------------------------------- fit and evaluate

@@ -365,4 +365,4 @@ def test_build_training_frame_from_database(db: Engine) -> None:
     assert (frame.groupby("game_id")["action_id"].min() == 0).all()  # tip-off state first
     assert frame["pregame_prob"].between(0, 1, inclusive="neither").all()
     assert set(frame["home_win"].unique()) <= {0.0, 1.0}
-    assert not frame["description"].isin(["Substitution", "Timeout"]).any()
+    assert "description" not in frame  # per-play text is not kept for training

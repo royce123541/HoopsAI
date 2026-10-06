@@ -25,10 +25,10 @@ def main(verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False) -> N
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-    )
+    from hoopsai.config import get_settings
+    from hoopsai.logs import configure_logging
+
+    configure_logging(logging.DEBUG if verbose else logging.INFO, get_settings().log_format)
 
 
 def _season(value: str) -> int:
@@ -41,7 +41,16 @@ def _season(value: str) -> int:
 @app.command()
 def api(host: str = "0.0.0.0", port: int = 8000, reload: bool = False) -> None:
     """Run the FastAPI server."""
-    uvicorn.run("hoopsai.api.main:app", host=host, port=port, reload=reload, loop=EVENT_LOOP)
+    # log_config=None: uvicorn's own loggers (access log included) go through the root
+    # handler set up in main(), so they follow HOOPSAI_LOG_FORMAT too.
+    uvicorn.run(
+        "hoopsai.api.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+        loop=EVENT_LOOP,
+        log_config=None,
+    )
 
 
 @app.command()
@@ -187,7 +196,11 @@ def live(
     from hoopsai.live import service
     from hoopsai.live.source import StatsLiveSource
     from hoopsai.live.tracker import LiveTracker
-    from hoopsai.ml.registry import load_production_ingame
+    from hoopsai.ml.registry import (
+        INGAME_MODEL_NAME,
+        load_production_ingame,
+        production_version,
+    )
 
     settings = get_settings()
     engine = get_sync_engine()
@@ -215,7 +228,12 @@ def live(
         return
     publisher = redis.Redis.from_url(settings.redis_url)
     recorder = service.Recorder(engine, publisher.publish, version, source="live")
-    service.LivePoller(engine, source, model, recorder).run_forever()
+    uri = settings.mlflow_tracking_uri
+    models = service.ModelSource(
+        current_version=lambda: production_version(uri, INGAME_MODEL_NAME),
+        load=lambda: load_production_ingame(uri),
+    )
+    service.LivePoller(engine, source, model, recorder, models=models).run_forever()
 
 
 @app.command()
@@ -288,6 +306,14 @@ def predict(
         only_scheduled=start is None,
     )
     typer.echo(str(summary))
+
+
+@app.command()
+def monitor() -> None:
+    """Check both models' accuracy on finished games against their held-out evaluation."""
+    from hoopsai.ingest import jobs
+
+    typer.echo(jobs.monitor())
 
 
 @app.command()

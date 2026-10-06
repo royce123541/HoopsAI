@@ -25,6 +25,8 @@ if sys.platform == "win32":
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).parent / "fixtures"
 DATA_TABLES = (
+    "serving.monitoring_runs",
+    "serving.job_runs",
     "serving.live_wp_snapshots",
     "serving.predictions",
     "serving.model_versions",

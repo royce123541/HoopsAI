@@ -6,6 +6,9 @@ x-backend-env: &backend-env
   HOOPSAI_REDIS_URL: redis://redis:6379/0
   HOOPSAI_MLFLOW_TRACKING_URI: http://mlflow:5000
   HOOPSAI_CORS_ORIGINS: '["http://localhost:3000"]'
+  HOOPSAI_LOG_FORMAT: json  # one JSON object per log line
+  # The weekly in-game retrain needs ~750 MB in the worker; set false on small machines.
+  HOOPSAI_INGAME_RETRAIN: ${HOOPSAI_INGAME_RETRAIN:-true}
 
 services:
   db:

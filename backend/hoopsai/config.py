@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -15,6 +16,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6379/0"
     mlflow_tracking_uri: str = "http://127.0.0.1:5000"
     cors_origins: list[str] = ["http://localhost:3000"]
+    log_format: Literal["text", "json"] = "text"  # json: one object per line, for containers
+    ingame_retrain: bool = True  # weekly in-game retrain needs ~750 MB; off on small hosts
 
 
 @lru_cache

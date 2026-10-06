@@ -163,3 +163,31 @@ class LiveSummary(BaseModel):
     clock_seconds: float
     score_home: int
     score_away: int
+
+
+class MonitoringResult(BaseModel):
+    model: Literal["pregame", "ingame"]
+    window: Literal["season", "last_30_days"]
+    model_version: str | None
+    games: int
+    metrics: Metrics | None
+    expected_logloss: float | None
+    status: Literal["ok", "warning", "insufficient"]
+    message: str
+    run_at: dt.datetime
+
+
+class JobStatus(BaseModel):
+    job: str
+    status: Literal["running", "success", "failed"]
+    started_at: dt.datetime
+    finished_at: dt.datetime | None
+    detail: str | None
+
+
+class SystemStatus(BaseModel):
+    # Versions behind the latest stored output, pre-game predictions and in-game points (not
+    # the registry's production alias: the API does not call MLflow).
+    models: dict[str, str | None]
+    jobs: list[JobStatus]  # latest run of each scheduled job
+    monitoring: list[MonitoringResult]

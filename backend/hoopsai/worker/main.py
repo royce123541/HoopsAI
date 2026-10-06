@@ -1,4 +1,5 @@
-"""Scheduled pipeline jobs (docs/ARCHITECTURE.md §3.5). Monitoring joins in M5."""
+"""Scheduled pipeline jobs (docs/ARCHITECTURE.md §3.5). Model monitoring runs at the end of
+the nightly pipeline; every job run is recorded in serving.job_runs."""
 
 import logging
 from datetime import UTC

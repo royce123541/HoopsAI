@@ -244,3 +244,39 @@ class LiveWinProb(Base):
     home_win_prob: Mapped[float] = mapped_column(Float)
     description: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------- operations
+
+
+class MonitoringRun(Base):
+    """One check of a model's real-world accuracy over a window of finished games, against
+    the log loss it was expected to have (its held-out evaluation)."""
+
+    __tablename__ = "monitoring_runs"
+    __table_args__ = {"schema": "serving"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    model: Mapped[str] = mapped_column(Text)  # "pregame" | "ingame"
+    window: Mapped[str] = mapped_column(Text)  # "season" | "last_30_days"
+    model_version: Mapped[str | None] = mapped_column(Text)
+    games: Mapped[int] = mapped_column(Integer)
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    expected_logloss: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(Text)  # "ok" | "warning" | "insufficient"
+    message: Mapped[str] = mapped_column(Text)
+
+
+class JobRun(Base):
+    """A scheduled job's execution, for operational visibility (GET /api/status)."""
+
+    __tablename__ = "job_runs"
+    __table_args__ = (Index("ix_job_runs_job_started", "job", "started_at"), {"schema": "serving"})
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    job: Mapped[str] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(Text)  # "running" | "success" | "failed"
+    detail: Mapped[str | None] = mapped_column(Text)

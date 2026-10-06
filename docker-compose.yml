@@ -1,0 +1,77 @@
+# Local dev stack. Works without a .env file; copy .env.example to .env to override defaults.
+# The `live` service (in-game poller) is added in milestone M4.
+
+x-backend-env: &backend-env
+  HOOPSAI_ENV: ${HOOPSAI_ENV:-dev}
+  HOOPSAI_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hoopsai}:${POSTGRES_PASSWORD:-hoopsai}@db:5432/${POSTGRES_DB:-hoopsai}
+  HOOPSAI_REDIS_URL: redis://redis:6379/0
+  HOOPSAI_MLFLOW_TRACKING_URI: http://mlflow:5000
+  HOOPSAI_CORS_ORIGINS: '["http://localhost:3000"]'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hoopsai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hoopsai}
+      POSTGRES_DB: ${POSTGRES_DB:-hoopsai}
+    ports: ["${POSTGRES_HOST_PORT:-5433}:5432"]  # 5433 avoids clashing with a native Postgres
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.16.1
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artifacts
+      --allowed-hosts mlflow,mlflow:5000,localhost,localhost:5000
+    ports: ["5000:5000"]
+    volumes: [mlflow:/mlflow]
+
+  api:
+    build: ./backend
+    command: sh -c "alembic upgrade head && hoopsai api"
+    environment: *backend-env
+    ports: ["8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build: ./backend
+    command: hoopsai worker
+    environment: *backend-env
+    depends_on:
+      api: { condition: service_healthy }  # api applies migrations on start
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    ports: ["3000:3000"]
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  mlflow:

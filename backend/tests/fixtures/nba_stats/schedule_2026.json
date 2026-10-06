@@ -1,0 +1,129 @@
+{
+ "meta": {
+  "version": 1,
+  "request": "http://nba.cloud/league/00/2026-27/scheduleleaguev2?Format=json",
+  "time": "2026-10-06T11:00:26.026Z"
+ },
+ "leagueSchedule": {
+  "seasonYear": "2026-27",
+  "leagueId": "00",
+  "gameDates": [
+   {
+    "gameDate": "10/20/2026 00:00:00",
+    "games": [
+     {
+      "gameId": "0022600001",
+      "gameCode": "20261020/BOSDET",
+      "gameStatus": 1,
+      "gameStatusText": "3:00 pm ET",
+      "gameSequence": 1,
+      "gameDateEst": "2026-10-20T00:00:00Z",
+      "gameTimeEst": "1900-01-01T15:00:00Z",
+      "gameDateTimeEst": "2026-10-20T15:00:00Z",
+      "gameDateUTC": "2026-10-20T04:00:00Z",
+      "gameTimeUTC": "1900-01-01T19:00:00Z",
+      "gameDateTimeUTC": "2026-10-20T19:00:00Z",
+      "awayTeamTime": "2026-10-20T15:00:00Z",
+      "homeTeamTime": "2026-10-20T15:00:00Z",
+      "day": "Tue",
+      "monthNum": 10,
+      "weekNumber": 1,
+      "weekName": "Week 1",
+      "ifNecessary": "false",
+      "seriesGameNumber": "",
+      "gameLabel": "",
+      "gameSubLabel": "",
+      "seriesText": "",
+      "arenaName": "Little Caesars Arena",
+      "arenaState": "MI",
+      "arenaCity": "Detroit",
+      "postponedStatus": "N",
+      "branchLink": "",
+      "gameSubtype": "",
+      "isNeutral": false,
+      "broadcasters": {},
+      "homeTeam": {
+       "teamId": 1610612765,
+       "teamName": "Pistons",
+       "teamCity": "Detroit",
+       "teamTricode": "DET",
+       "teamSlug": "pistons",
+       "wins": 0,
+       "losses": 0,
+       "score": 0,
+       "seed": 0
+      },
+      "awayTeam": {
+       "teamId": 1610612738,
+       "teamName": "Celtics",
+       "teamCity": "Boston",
+       "teamTricode": "BOS",
+       "teamSlug": "celtics",
+       "wins": 0,
+       "losses": 0,
+       "score": 0,
+       "seed": 0
+      },
+      "pointsLeaders": []
+     },
+     {
+      "gameId": "0022600002",
+      "gameCode": "20261020/PHINYK",
+      "gameStatus": 1,
+      "gameStatusText": "7:00 pm ET",
+      "gameSequence": 2,
+      "gameDateEst": "2026-10-20T00:00:00Z",
+      "gameTimeEst": "1900-01-01T19:00:00Z",
+      "gameDateTimeEst": "2026-10-20T19:00:00Z",
+      "gameDateUTC": "2026-10-20T04:00:00Z",
+      "gameTimeUTC": "1900-01-01T23:00:00Z",
+      "gameDateTimeUTC": "2026-10-20T23:00:00Z",
+      "awayTeamTime": "2026-10-20T19:00:00Z",
+      "homeTeamTime": "2026-10-20T19:00:00Z",
+      "day": "Tue",
+      "monthNum": 10,
+      "weekNumber": 1,
+      "weekName": "Week 1",
+      "ifNecessary": "false",
+      "seriesGameNumber": "",
+      "gameLabel": "",
+      "gameSubLabel": "",
+      "seriesText": "",
+      "arenaName": "Madison Square Garden",
+      "arenaState": "NY",
+      "arenaCity": "New York",
+      "postponedStatus": "N",
+      "branchLink": "",
+      "gameSubtype": "",
+      "isNeutral": false,
+      "broadcasters": {},
+      "homeTeam": {
+       "teamId": 1610612752,
+       "teamName": "Knicks",
+       "teamCity": "New York",
+       "teamTricode": "NYK",
+       "teamSlug": "knicks",
+       "wins": 0,
+       "losses": 0,
+       "score": 0,
+       "seed": 0
+      },
+      "awayTeam": {
+       "teamId": 1610612755,
+       "teamName": "76ers",
+       "teamCity": "Philadelphia",
+       "teamTricode": "PHI",
+       "teamSlug": "sixers",
+       "wins": 0,
+       "losses": 0,
+       "score": 0,
+       "seed": 0
+      },
+      "pointsLeaders": []
+     }
+    ]
+   }
+  ],
+  "weeks": []
+ }
+}

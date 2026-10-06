@@ -14,7 +14,7 @@ Machine-learned win probabilities for NBA games, before tip-off and live during 
 | M2 | Elo, point-in-time features, pre-game LightGBM model, MLflow | ✅ done |
 | M3 | Pre-game serving: REST endpoints, slate, game and model pages | ✅ done |
 | M4 | Live: in-game model, `live` poller, Redis to WebSocket, live chart, replay | ✅ done |
-| M5 | Ops: schedules, drift monitor, CI | ⏳ next |
+| M5 | Ops: schedules, drift monitor, CI | ✅ done |
 
 ## Run everything (Docker)
 
@@ -152,6 +152,29 @@ While a game is on, the `live` service works like this:
 `hoopsai replay` runs a finished game through the same path at 30× speed, which is handy when no games are on. Open the game's page while it runs to watch the chart build.
 
 The cdn.nba.com live feed is blocked (HTTP 403) on this network, so live data comes from stats.nba.com, the same source as the training data.
+
+## Operations
+
+```sh
+curl http://localhost:8000/api/status              # latest job runs, models behind the latest output, monitoring
+curl http://localhost:8000/api/model/monitoring    # accuracy on real games vs expectations
+cd backend && uv run hoopsai monitor               # run the accuracy check now
+```
+
+- **Monitor:** each night it compares both models' accuracy on finished games (this season and the last 30 days) with their held-out evaluation. It warns when they fall behind. The model page shows the result as "On real games".
+- **Logs:** containers log JSON, one object per line. Set `HOOPSAI_LOG_FORMAT=text` for readable terminal output.
+- **Model updates:** the `live` service picks up a newly promoted in-game model within 10 minutes, without a restart.
+
+### Running on an 8 GB machine
+
+The whole stack fits, but there's little headroom: Postgres, Redis, MLflow, the API, the web server, the worker and Docker's WSL VM all share the memory. During the weekly in-game retrain, the worker needs about 750 MB more. To keep things stable:
+- Cap the WSL VM so Windows keeps room. Put this in `%UserProfile%\.wslconfig`, then run `wsl --shutdown` and restart Docker Desktop:
+  ```ini
+  [wsl2]
+  memory=4GB
+  ```
+- Or skip the in-game part of the weekly retrain with `HOOPSAI_INGAME_RETRAIN=false` in `.env`, and run `hoopsai train-ingame` by hand when the machine is idle.
+- Avoid running a backfill and an image build at the same time.
 
 ## Checks
 

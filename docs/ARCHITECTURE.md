@@ -161,11 +161,29 @@ That log loss is stored at full precision as a version tag. Each prediction row 
 
 | Job | When | Does |
 |---|---|---|
-| `ingest_daily` | 10:00 UTC | Pulls the previous day's finals and box scores, then updates Elo and features |
-| `ingest_schedule` | 12:00 UTC | Pulls the day's schedule |
-| `predict_pregame` | 13:00 UTC, then every 2h until tip | Scores the day's games |
-| `retrain` | Weekly (Mon 11:00 UTC) | Trains, evaluates, and promotes the model if it improved |
-| `monitor` | Daily | Tracks rolling Brier and log loss of live predictions and logs a warning on drift |
+| `daily_pipeline` | 10:00 UTC | Ingests the previous day's games, rebuilds features, re-scores the coming week, then runs the monitor |
+| `predict_pregame` | Every 2 hours (:05) | Re-scores upcoming games; picks up schedule changes and newly promoted models |
+| `ingest_schedule` | 12:00 UTC | Refreshes the current season's schedule |
+| `retrain` | Mondays 11:00 UTC | Retrains both models and promotes them only if they improved. The in-game part needs about 750 MB; `HOOPSAI_INGAME_RETRAIN=false` skips it |
+
+Every run is recorded in `serving.job_runs` (running, then success or failed, with a summary or the error). `GET /api/status` shows each job's latest run, the model versions behind the latest stored pre-game prediction and in-game point, and the latest monitoring results.
+
+**Monitoring** (`hoopsai/monitor.py`, also `hoopsai monitor`):
+- **What it scores:** finished games, over the current season and the last 30 days.
+  - Pre-game: each game's latest prediction made **before tip-off**. Predictions scored after the game started are excluded, because they aren't forecasts.
+  - In-game: every **live** point (replays are excluded).
+- **Warning:** when log loss is more than 0.03 (pre-game) or 0.05 (in-game) above the model's own held-out log loss, or when calibration error is above 6% over at least 200 games. The pre-game tolerance reflects normal season-to-season variation; the backtest ranged from 0.601 to 0.644.
+- **Insufficient:** until 50 (pre-game) or 20 (in-game) games have finished.
+- **Output:** results are stored in `serving.monitoring_runs`, logged as warnings when bad, served at `GET /api/model/monitoring`, and shown on the model page as "On real games".
+
+**Model updates while live:** every 10 minutes the `live` service checks which in-game version the production alias points at. When a new one is promoted, it loads that exact version and continues games in progress with it, without a restart.
+
+**Logs:** with `HOOPSAI_LOG_FORMAT=json` (set in compose), every service writes one JSON object per line, including uvicorn's access log.
+
+**CI** (`.github/workflows/ci.yml`):
+- **Backend:** ruff, mypy, `alembic upgrade` plus `alembic check`, and pytest against Postgres and Redis service containers.
+- **Web:** Prettier, ESLint, typecheck and a production build.
+- **Images:** both Docker images are built, once the other two jobs pass.
 
 ---
 

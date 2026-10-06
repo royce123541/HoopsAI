@@ -24,7 +24,7 @@ The plan has two parts:
 | Cache and message bus | **Redis 7** | Pub/sub for live probability updates, plus an API response cache. |
 | Jobs and scheduling | **APScheduler** in a `worker` service | Runs the nightly ingest, daily predictions and weekly retrain. Lighter than Celery or Airflow at this scale. |
 | ML | **pandas, scikit-learn, LightGBM**, and **MLflow** (client: `mlflow-skinny`) for tracking and the model registry | Gradient-boosted trees are strong on tabular data. LightGBM's built-in TreeSHAP (`pred_contrib`) explains the main factors behind each prediction without the separate `shap` package. MLflow versions every model. |
-| Data source | **`nba_api`**: stats.nba.com for history, cdn.nba.com live endpoints for in-game data | Free and thorough. It sits behind a `DataSource` interface so a paid provider can replace it later. |
+| Data source | **`nba_api`**: stats.nba.com for history and for live games (`ScoreboardV3`, `PlayByPlayV3`) | Free and thorough. It sits behind `DataSource` and `LiveSource` interfaces so a paid provider can replace it later. The originally planned cdn.nba.com live feed returns 403 (Akamai "Access Denied") from this deployment's network, for browsers too. |
 | Tooling | `uv` (Python), `npm` (Node), Ruff and mypy, ESLint and Prettier, pytest, Vitest, Playwright | |
 | Runtime | Docker Compose: `db`, `redis`, `api`, `worker`, `live`, `web`, `mlflow` | Runs on Docker Desktop with WSL2 on Windows and moves unchanged to Fly.io, Render or a VPS. |
 
@@ -70,7 +70,7 @@ HoopsAI/
                                                                     └──► pregame scorer ◄────┘ (registered model)
                                                                               │
                                                                      predictions table ──► FastAPI REST ──► Next.js
- cdn.nba.com live ──(poll 5–10s)──► live poller ──► in-game model ──► live_wp_snapshots
+ stats.nba.com live ─(poll 10s)───► live poller ──► in-game model ──► live_wp_snapshots
                                                      └──► Redis pub/sub ──► FastAPI WS ──► Next.js live chart
 ```
 
@@ -84,7 +84,7 @@ HoopsAI/
 - **Neutral-site games:** for international games and NBA Cup knockouts, the game log lists both teams as away ("@"). The designated home team is taken from the schedule, which is loaded first.
 - **Game types modelled:** regular season (game-id prefix 002), play-in (005) and playoffs (004). Preseason, All-Star and the NBA Cup final (006) are excluded.
 - **Incremental:** a nightly job at about 10:00 UTC, after West Coast games end, pulls the previous day's finals and box scores. A second job pulls the day's schedule.
-- **Caveat:** stats.nba.com often blocks cloud IP ranges. The historical backfill should run locally, or through the `DataSource` swap if that is blocked too. The cdn.nba.com live endpoints are more permissive.
+- **Caveat:** stats.nba.com often blocks cloud IP ranges. The historical backfill should run locally, or through the `DataSource` swap if that is blocked too. Live polling uses the same host, so the `live` service must run where stats.nba.com is reachable too.
 
 ### 3.2 Feature Engineering (Gold, `features` schema)
 **Point-in-time correctness is the main rule.** Every feature for game G uses only games that finished on an earlier date than G. A team plays at most once per date, so no relevant game is lost and no same-day result can leak in.
@@ -118,15 +118,23 @@ Features per team, used as home minus away differences plus raw values:
 - **Explainability:** TreeSHAP contributions in log-odds, from LightGBM `pred_contrib`, give the top factors for each game (`PregameModel.explain`). They are stored with each prediction, and the UI shows the top 5.
 
 **B. In-game model**
-- **Training data:** every play-by-play state, labeled with the game's final outcome
+- **Training data:** every play-by-play state, labelled with the game's final outcome.
+  - States come from `hoopsai/live/state.py`, the same code the live service uses.
+  - Substitutions, timeouts and replay reviews are dropped, since they never change the state.
+- **Possession:** PlayByPlayV3 has no possession field, so it is inferred from events.
+  - Rules: made shots and turnovers switch possession, rebounds give it to the rebounder, and the last made free throw of a trip switches it. Technical free throws don't change it, and flagrant or clear-path trips keep it with the fouled team.
+  - Jump balls make it unknown, because the jump-ball row doesn't say who won the tip.
+  - On 35,609 real shots, the inferred possession was the shooting team 97.8% of the time, unknown 2.1% and wrong 0.1%.
 - **Features:**
-  - Score difference and seconds remaining
-  - `diff / sqrt(seconds_remaining + 1)`, the key interaction
-  - Which team has possession, and the period
-  - The pre-game model's logit, which lets team strength fade as the game goes on
-- **Estimator:** LightGBM with a monotone constraint on score difference, then calibration
-- **Split:** by game, never by row, so states from one game don't leak across train and test
-- **Hard limits:** the probability is pinned to exactly 0 or 1 once the game is final.
+  - score difference and seconds remaining (in regulation, or in the current overtime)
+  - `diff / sqrt(seconds_remaining + 1)`
+  - possession and period
+  - the pre-game logit, plus that logit times the share of the game left, so team strength fades as the game goes on
+- **Pre-game input:** for training, each season's pre-game probabilities come from a pre-game model fitted only on earlier seasons. An in-sample probability would be overconfident, and the in-game model would learn to trust it too much. Live, the input is the game's stored pre-game prediction.
+- **Estimator:** LightGBM, monotone increasing in score difference, scaled difference, possession and pre-game strength.
+- **Split:** the newest season is held out for evaluation, and the production model is then refitted on all seasons. No game is ever split across training and test.
+- **Acceptance:** better log loss than the pre-game probability alone, and calibration error of at most 0.03.
+- **Hard limits:** the probability is exactly 0 or 1 when a game is final, or when the clock reads zero in the 4th quarter or overtime with one team ahead.
 
 **Registry:** both models are logged to MLflow with their metrics, feature list, data window and backtest report. A new version becomes the `production` alias only if both hold:
 - it passes the acceptance checks;
@@ -142,10 +150,12 @@ That log loss is stored at full precision as a version tag. Each prediction row 
   - **Model snapshot:** the backtest report and feature importance of each model version used are copied from MLflow into `serving.model_versions`, so the API never calls MLflow.
   - **Reads:** the API only reads these tables, so there is no inference on the request path.
 - **Live (streaming):**
-  - The `live` service checks the live scoreboard about every 30s. For each game in progress, it polls the box score and play-by-play every 5–10s.
-  - When the state changes, it runs the in-game model, inserts a row into `live_wp_snapshots`, and publishes JSON to the Redis channel `game:{id}`.
-  - The FastAPI endpoint `WS /ws/games/{id}` subscribes and pushes updates. On connect it sends a snapshot of the history so far, then the deltas.
-- **Replay mode:** `hoopsai replay <game_id> --speed 20x` feeds a recorded play-by-play through the same live path via `ReplaySource`. This allows development and demos when no games are being played.
+  - **Polling:** the `live` service (`hoopsai live`) reads `ScoreboardV3` every 30s and only tracks games that are in `core.games`, so preseason games are ignored. For each live game it polls `PlayByPlayV3` every 10s.
+  - **Scoring:** new events become states, the in-game model scores them, and the points go into `serving.live_wp_snapshots`.
+  - **Publishing:** points are published as `{"type": "points", ...}` to the Redis channel `game:{id}`. The game's status and score are also updated in `core.games`.
+  - **Restarts:** after a restart the poller resumes after the last stored action, so nothing is recorded twice.
+  - **WebSocket:** `WS /api/ws/games/{id}` subscribes to the channel before reading the snapshot it sends first, so no update falls in between. Clients de-duplicate by `action_id`.
+- **Replay mode:** `hoopsai replay <game_id> --speed 30` re-runs a finished game through the same recorder, Redis and WebSocket path, with game time running at 30× real time. It uses the play-by-play stored by the backfill, or fetches it. Replay points are stored with `source = 'replay'` and cleared at the start of each replay. The API prefers live points over replayed ones.
 
 ### 3.5 Scheduled Jobs (`worker`)
 
@@ -163,7 +173,7 @@ That log loss is stored at full precision as a version tag. Each prediction row 
 - `GET /games?date=YYYY-MM-DD`: the day's slate with pre-game win probability and status
 - `GET /games/{id}`: game detail, pre-game win probability, top SHAP factors, and team comparison
 - `GET /games/{id}/winprob`: the full live win-probability timeline
-- `WS /ws/games/{id}`: live win-probability stream
+- `WS /api/ws/games/{id}`: live win-probability stream (snapshot, then `points` and `reset` messages)
 - `GET /teams`, `GET /teams/{id}`: team profile, Elo history and recent form
 - `GET /model`: current model versions, backtest metrics and calibration curve data
 - `GET /health`

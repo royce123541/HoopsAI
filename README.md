@@ -13,8 +13,8 @@ Machine-learned win probabilities for NBA games, before tip-off and live during 
 | M1 | Ingestion: `DataSource`, nba_api loaders, backfill CLI, `worker` service | ✅ done |
 | M2 | Elo, point-in-time features, pre-game LightGBM model, MLflow | ✅ done |
 | M3 | Pre-game serving: REST endpoints, slate, game and model pages | ✅ done |
-| M4 | Live: in-game model, `live` poller, Redis to WebSocket, live chart, replay | ⏳ next |
-| M5 | Ops: schedules, drift monitor, CI | |
+| M4 | Live: in-game model, `live` poller, Redis to WebSocket, live chart, replay | ✅ done |
+| M5 | Ops: schedules, drift monitor, CI | ⏳ next |
 
 ## Run everything (Docker)
 
@@ -132,6 +132,26 @@ Predictions are stored in `serving.predictions`. A new row is written only when 
 | `/model` | Backtest results against Elo, calibration, and feature importance |
 
 The API serves the same data as JSON: `/api/games`, `/api/games/{id}`, `/api/teams`, `/api/teams/{id}` and `/api/model`. The web app's TypeScript types are generated from its OpenAPI schema; with the API running, refresh them with `cd web && npm run gen:api`.
+
+## Live win probability
+
+```sh
+cd backend
+uv run hoopsai train-ingame                # train on play-by-play from 2015-16; newest season held out
+uv run hoopsai live                        # the live poller (in Docker: the `live` service)
+uv run hoopsai live --watch 0042500405     # print one game's in-game probabilities, store nothing
+uv run hoopsai replay 0042500405 --speed 30   # re-run a finished game through the live pipeline
+```
+
+While a game is on, the `live` service works like this:
+- **Polling:** it reads the stats.nba.com scoreboard every 30 s and each live game's play-by-play every 10 s.
+- **Scoring:** the in-game model scores every new play.
+- **Publishing:** each new point is stored in `serving.live_wp_snapshots` and published to Redis.
+- **Web:** the game page receives the points over a WebSocket (`/api/ws/games/{id}`) and redraws its chart. The slate refreshes every 20 s while games are live.
+
+`hoopsai replay` runs a finished game through the same path at 30× speed, which is handy when no games are on. Open the game's page while it runs to watch the chart build.
+
+The cdn.nba.com live feed is blocked (HTTP 403) on this network, so live data comes from stats.nba.com, the same source as the training data.
 
 ## Checks
 

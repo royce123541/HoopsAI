@@ -1,0 +1,24 @@
+# Fallback when stats.nba.com blocks the cloud VM: run only the data jobs on the home PC.
+# 1. Open the tunnel (keep it running; autossh restarts it):
+#      autossh -M 0 -N -L 15432:127.0.0.1:5432 -L 16379:127.0.0.1:6379 -L 15000:127.0.0.1:5000 ubuntu@<vm-ip>
+# 2. docker compose -f deploy/docker-compose.pc.yml --env-file .env up -d --build
+# Stop worker and live on the VM first so the two never run at once.
+
+x-pc-env: &pc-env
+  HOOPSAI_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hoopsai}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@host.docker.internal:15432/${POSTGRES_DB:-hoopsai}
+  HOOPSAI_REDIS_URL: redis://host.docker.internal:16379/0
+  HOOPSAI_MLFLOW_TRACKING_URI: http://host.docker.internal:15000
+  HOOPSAI_LOG_FORMAT: json
+  HOOPSAI_INGAME_RETRAIN: "false"  # 8 GB PC; retrain on the VM instead (`hoopsai train-ingame`)
+
+services:
+  worker:
+    build: ../backend
+    command: hoopsai worker
+    environment: *pc-env
+    restart: unless-stopped
+  live:
+    build: ../backend
+    command: hoopsai live
+    environment: *pc-env
+    restart: unless-stopped

@@ -3,6 +3,7 @@
 Machine-learned win probabilities for NBA games, before tip-off and live during play.
 
 - **Architecture and data pipeline:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Deploying for free (Oracle Cloud Always Free):** [docs/DEPLOY.md](docs/DEPLOY.md)
 - **Stack:** Next.js (TypeScript, Tailwind) · FastAPI (Python 3.12) · PostgreSQL 16 · Redis 7 · LightGBM and MLflow
 
 ## Status

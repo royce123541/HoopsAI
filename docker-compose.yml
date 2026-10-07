@@ -1,4 +1,5 @@
 # Local dev stack. Works without a .env file; copy .env.example to .env to override defaults.
+# Every service restarts after a crash (e.g. killed for memory) or a Docker restart.
 
 x-backend-env: &backend-env
   HOOPSAI_ENV: ${HOOPSAI_ENV:-dev}
@@ -13,6 +14,7 @@ x-backend-env: &backend-env
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-hoopsai}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hoopsai}
@@ -27,6 +29,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports: ["6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -36,6 +39,7 @@ services:
 
   mlflow:
     image: ghcr.io/mlflow/mlflow:v3.16.1
+    restart: unless-stopped
     command: >
       mlflow server --host 0.0.0.0 --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db
@@ -46,6 +50,7 @@ services:
 
   api:
     build: ./backend
+    restart: unless-stopped
     command: sh -c "alembic upgrade head && hoopsai api"
     environment: *backend-env
     ports: ["8000:8000"]
@@ -76,6 +81,7 @@ services:
 
   web:
     build: ./web
+    restart: unless-stopped
     environment:
       API_INTERNAL_URL: http://api:8000  # server-side requests, inside the compose network
       API_PUBLIC_WS_URL: ws://localhost:8000  # the browser's WebSocket connection

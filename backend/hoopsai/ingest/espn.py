@@ -100,6 +100,8 @@ class EspnIngestor:
     engine: Engine
     client: EspnClient = field(default_factory=EspnClient)
     summary: RunSummary = field(default_factory=RunSummary)
+    # Off on a small database: play-by-play and raw game payloads (see Settings.store_pbp).
+    store_pbp: bool = True
 
     def seed_teams(self) -> None:
         """Team rows come bundled with nba_api (no request), keyed by NBA team id."""
@@ -130,11 +132,13 @@ class EspnIngestor:
         )
 
     def game(self, game_id: str, espn_id: str, *, skip_if_done: bool = True) -> None:
-        """Team box scores and play-by-play of a finished game."""
+        """Team box scores (and play-by-play, if stored) of a finished game."""
 
         def load(conn: Connection, resp: RawResponse) -> int:
-            store.upsert_team_game_stats(conn, parse_team_box(resp.payload, game_id))
-            return store.upsert_pbp_events(conn, parse_plays(resp.payload, game_id))
+            rows = store.upsert_team_game_stats(conn, parse_team_box(resp.payload, game_id))
+            if self.store_pbp:
+                rows += store.upsert_pbp_events(conn, parse_plays(resp.payload, game_id))
+            return rows
 
         run_task(
             self.engine,
@@ -143,6 +147,7 @@ class EspnIngestor:
             lambda: self.client.fetch_summary(espn_id),
             load,
             skip_if_done=skip_if_done,
+            keep_raw=self.store_pbp,
         )
 
     def days_to_refresh(self, today: date) -> list[date]:

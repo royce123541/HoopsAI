@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     log_format: Literal["text", "json"] = "text"  # json: one object per line, for containers
     # nba_stats: stats.nba.com (blocks cloud servers); espn: ESPN's public API (works anywhere).
     data_source: Literal["nba_stats", "espn"] = "nba_stats"
+    # Play-by-play and raw game payloads, ~140 MB a season, are only needed for in-game
+    # retraining; set false on a free 0.5 GB database.
+    store_pbp: bool = True
     ingame_retrain: bool = True  # weekly in-game retrain needs ~750 MB; off on small hosts
 
 

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, func, select
 
-from hoopsai.db.models import Game, IngestionRun, PbpEvent, TeamGameStats
+from hoopsai.db.models import ApiResponse, Game, IngestionRun, PbpEvent, TeamGameStats
 from hoopsai.ingest import store
 from hoopsai.ingest.espn import EspnIngestor
 from hoopsai.live.source import EspnLiveSource
@@ -143,3 +143,10 @@ def test_live_source_uses_database_ids(db: Engine) -> None:
 
     assert (status.game_id, status.home_score, status.away_score) == ("0042500405", 90, 94)
     assert {e["game_id"] for e in events} == {"0042500405"}
+
+
+def test_play_by_play_can_be_left_out(db: Engine) -> None:
+    EspnIngestor(db, FakeEspn(), store_pbp=False).daily(FINALS_DAY)
+
+    assert (count(db, TeamGameStats), count(db, PbpEvent)) == (2, 0)
+    assert count(db, ApiResponse, ApiResponse.endpoint == "summary") == 0

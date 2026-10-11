@@ -60,6 +60,12 @@ def make_ingestor() -> Ingestor:
     return Ingestor(engine=get_sync_engine(), source=NbaStatsSource())
 
 
+def make_espn_ingestor() -> EspnIngestor:
+    from hoopsai.config import get_settings
+
+    return EspnIngestor(get_sync_engine(), store_pbp=get_settings().store_pbp)
+
+
 def use_espn() -> bool:
     from hoopsai.config import get_settings
 
@@ -69,9 +75,7 @@ def use_espn() -> bool:
 def ingest_daily() -> RunSummary:
     """Previous day's finals, box scores and play-by-play for the current season."""
     today = datetime.now(UTC).date()
-    summary = (
-        EspnIngestor(get_sync_engine()).daily(today) if use_espn() else make_ingestor().daily(today)
-    )
+    summary = make_espn_ingestor().daily(today) if use_espn() else make_ingestor().daily(today)
     log.info("ingest_daily: %s", summary)
     return summary
 
@@ -151,9 +155,7 @@ def retrain() -> None:
 @recorded("ingest_schedule")
 def ingest_schedule() -> RunSummary:
     """Refresh the current season's schedule (tip times, postponements, playoff matchups)."""
-    ingestor: Ingestor | EspnIngestor = (
-        EspnIngestor(get_sync_engine()) if use_espn() else make_ingestor()
-    )
+    ingestor: Ingestor | EspnIngestor = make_espn_ingestor() if use_espn() else make_ingestor()
     ingestor.seed_teams()
     ingestor.schedule(current_season(datetime.now(UTC).date()))
     log.info("ingest_schedule: %s", ingestor.summary)

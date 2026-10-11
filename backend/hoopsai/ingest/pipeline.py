@@ -41,9 +41,10 @@ def run_task(
     load: Callable[[Connection, RawResponse], int],
     *,
     skip_if_done: bool,
+    keep_raw: bool = True,
 ) -> None:
-    """Fetch, store the raw payload, load core rows and checkpoint, in one transaction. A
-    failure is recorded and counted, never raised."""
+    """Fetch, store the raw payload (if `keep_raw`), load core rows and checkpoint, in one
+    transaction. A failure is recorded and counted, never raised."""
     if skip_if_done:
         with engine.connect() as conn:
             if store.is_done(conn, task_key):
@@ -52,7 +53,8 @@ def run_task(
     try:
         resp = fetch()
         with engine.begin() as conn:
-            store.save_raw(conn, resp)
+            if keep_raw:
+                store.save_raw(conn, resp)
             rows = load(conn, resp)
             store.mark(conn, task_key, store.SUCCESS, rows=rows)
     except Exception as exc:

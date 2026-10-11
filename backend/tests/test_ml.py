@@ -147,3 +147,27 @@ def test_train_registers_promotes_and_loads_production(
     assert second.registration is not None
     assert (second.registration.version, second.registration.promoted) == ("2", False)
     assert registry.load_production(tracking_uri)[1] == "1"
+
+
+@pytest.mark.usefixtures("db")
+def test_db_registry_promotes_and_loads_like_mlflow(
+    features: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(BacktestReport, "acceptance", lambda self, **_: {"ok": True})
+    uri = registry.DB_TRACKING_URI
+
+    first = train(features, today=TODAY, params=FAST, n_test_seasons=2, tracking_uri=uri)
+    assert first.registration is not None
+    assert (first.registration.version, first.registration.promoted) == ("1", True)
+
+    loaded, version = registry.load_production(uri)
+    sample = backtest.labelled(features).tail(20)
+    np.testing.assert_allclose(loaded.predict_proba(sample), first.model.predict_proba(sample))
+    assert registry.heldout_logloss(uri, registry.MODEL_NAME, version) is not None
+    details = registry.version_details(uri, registry.MODEL_NAME, version)
+    assert {"backtest.json", "importance.json"} <= set(details.artifacts)
+
+    second = train(features, today=TODAY, params=FAST, n_test_seasons=2, tracking_uri=uri)
+    assert second.registration is not None
+    assert (second.registration.version, second.registration.promoted) == ("2", False)
+    assert registry.production_version(uri, registry.MODEL_NAME) == "1"

@@ -4,11 +4,8 @@ only reads them, so no inference happens on the request path."""
 import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
 
-import mlflow
 import pandas as pd
-from mlflow import MlflowClient
 from sqlalchemy import Engine, bindparam, insert, select, text
 
 from hoopsai.dates import eastern_today
@@ -71,28 +68,24 @@ def _latest_predictions(engine: Engine, game_ids: list[str]) -> dict[str, tuple[
 
 
 def snapshot_model_version(engine: Engine, version: str, tracking_uri: str) -> None:
-    """Copy the version's backtest report and feature importance out of MLflow, once."""
+    """Copy the version's backtest report and feature importance out of the registry, once."""
     with engine.connect() as conn:
         if conn.scalar(
             select(ModelVersionSnapshot.version).where(ModelVersionSnapshot.version == version)
         ):
             return
-    mlflow.set_tracking_uri(tracking_uri)
-    mv = MlflowClient().get_model_version(registry.MODEL_NAME, version)
-    run_id = str(mv.run_id)
-    backtest: dict[str, Any] = mlflow.artifacts.load_dict(f"runs:/{run_id}/backtest.json")
-    importance: dict[str, Any] = mlflow.artifacts.load_dict(f"runs:/{run_id}/importance.json")
-    params = MlflowClient().get_run(run_id).data.params
+    details = registry.version_details(tracking_uri, registry.MODEL_NAME, version)
+    params = details.params
     with engine.begin() as conn:
         conn.execute(
             insert(ModelVersionSnapshot).values(
                 version=version,
-                run_id=run_id,
-                feature_version=params.get("feature_version", FEATURE_VERSION),
-                calibration=params.get("calibration", "none"),
-                train_seasons=params.get("train_seasons", ""),
-                backtest=backtest,
-                importance=importance,
+                run_id=details.run_id,
+                feature_version=str(params.get("feature_version", FEATURE_VERSION)),
+                calibration=str(params.get("calibration", "none")),
+                train_seasons=str(params.get("train_seasons", "")),
+                backtest=details.artifacts["backtest.json"],
+                importance=details.artifacts["importance.json"],
             )
         )
 

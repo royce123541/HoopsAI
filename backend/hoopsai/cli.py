@@ -317,6 +317,31 @@ def monitor() -> None:
 
 
 @app.command()
+def publish(
+    target_url: Annotated[str, typer.Argument(help="e.g. Neon's postgresql://... URL")],
+    models: Annotated[
+        bool, typer.Option(help="Copy MLflow's production models into the database first")
+    ] = True,
+) -> None:
+    """Copy the website's data and the production models to another Postgres (e.g. Neon).
+    Play-by-play and raw API responses are left out to fit a free 0.5 GB database."""
+    from hoopsai.config import get_settings
+    from hoopsai.db.session import get_sync_engine
+    from hoopsai.ml import registry
+    from hoopsai.publish import migrate
+    from hoopsai.publish import publish as publish_to
+
+    migrate(get_settings().database_url)  # the local registry table must exist
+    if models:
+        uri = get_settings().mlflow_tracking_uri
+        for name in (registry.MODEL_NAME, registry.INGAME_MODEL_NAME):
+            typer.echo(f"{name}: v{registry.copy_production_to_db(uri, name)} -> database")
+    url = target_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    for table, rows in publish_to(get_sync_engine(), url).items():
+        typer.echo(f"{table}: {rows} rows")
+
+
+@app.command()
 def version() -> None:
     """Print the package version."""
     from hoopsai import __version__

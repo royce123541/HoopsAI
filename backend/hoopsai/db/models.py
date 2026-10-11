@@ -203,6 +203,24 @@ class ModelVersionSnapshot(Base):
     )
 
 
+class RegisteredModel(Base):
+    """Model registry kept in Postgres, for hosts without an MLflow server (tracking URI
+    "db"; see hoopsai.ml.registry). Models are small: ~0.3 MB pre-game, ~1.5 MB in-game."""
+
+    __tablename__ = "registered_models"
+    __table_args__ = {"schema": "serving"}
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model: Mapped[bytes] = mapped_column(LargeBinary)  # pickled PregameModel / InGameModel
+    params: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    artifacts: Mapped[dict[str, Any]] = mapped_column(JSONB)  # backtest/evaluation, importance
+    tags: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    is_production: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Prediction(Base):
     """A pre-game win probability. Re-scoring appends a row only when the probability or the
     model changes; the latest row per game is the current prediction."""

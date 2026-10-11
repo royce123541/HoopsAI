@@ -30,6 +30,7 @@ DATA_TABLES = (
     "serving.live_wp_snapshots",
     "serving.predictions",
     "serving.model_versions",
+    "serving.registered_models",
     "features.game_features",
     "features.elo_ratings",
     "core.pbp_events",

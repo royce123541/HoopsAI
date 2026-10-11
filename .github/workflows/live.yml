@@ -1,0 +1,23 @@
+name: Live tracking
+
+# A job may run for at most 6 hours, so three overlapping starts cover a game day: afternoon
+# games (16:00 UTC), the evening slate (21:30) and late West Coast games (03:00). Each run
+# polls until every game that day is final or its time is up; runs queue, never overlap.
+on:
+  schedule:
+    - cron: "0 16 * * *"
+    - cron: "30 21 * * *"
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    uses: ./.github/workflows/hoopsai-job.yml
+    with:
+      command: live --until-idle --max-hours 5.6
+      timeout-minutes: 350
+    secrets: inherit

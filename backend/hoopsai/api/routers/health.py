@@ -40,9 +40,12 @@ async def _run(check: Awaitable[None]) -> str:
 @router.get("/health", response_model=HealthResponse)
 async def health(request: Request) -> HealthResponse:
     """Liveness plus dependency status. Always 200 so the API stays up while deps recover."""
-    db, cache = await asyncio.gather(_run(_check_database()), _run(_check_redis(request)))
-    checks = {"database": db, "redis": cache}
+    if request.app.state.redis is None:  # no Redis on this host (live charts poll)
+        checks = {"database": await _run(_check_database()), "redis": "disabled"}
+    else:
+        db, cache = await asyncio.gather(_run(_check_database()), _run(_check_redis(request)))
+        checks = {"database": db, "redis": cache}
     status: Literal["ok", "degraded"] = (
-        "ok" if all(v == "ok" for v in checks.values()) else "degraded"
+        "ok" if all(v in ("ok", "disabled") for v in checks.values()) else "degraded"
     )
     return HealthResponse(status=status, version=__version__, checks=checks)

@@ -27,7 +27,11 @@ export type LiveSummary = Schemas["LiveSummary"];
 export type MonitoringResult = Schemas["MonitoringResult"];
 
 function apiBaseUrl(): string {
-  return process.env.API_INTERNAL_URL ?? "http://127.0.0.1:8000";
+  // On Vercel, a service binding injects this as a URL base (possibly with a trailing slash).
+  return (process.env.API_INTERNAL_URL ?? "http://127.0.0.1:8000").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 /** GET a JSON resource; null on 404, an error (shown by app/error.tsx) otherwise. */
@@ -35,7 +39,7 @@ async function get<T>(path: string): Promise<T | null> {
   await connection(); // always render at request time; never bake API data into the build
   const res = await fetch(`${apiBaseUrl()}/api${path}`, {
     cache: "no-store",
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(10_000), // room for a serverless cold start
   });
   if (res.status === 404) return null;
   if (!res.ok)
@@ -55,7 +59,10 @@ export const getMonitoring = () => get<MonitoringResult[]>("/model/monitoring");
 export const getWinProb = (id: string) =>
   get<WinProbSeries>(`/games/${encodeURIComponent(id)}/winprob`);
 
-/** WebSocket base URL as the browser sees the API (read at request time, not build time). */
+/**
+ * WebSocket base URL as the browser sees the API (read at request time, not build time).
+ * "poll" (serverless hosts without WebSockets): the browser re-fetches the series instead.
+ */
 export function publicWsUrl(): string {
   return process.env.API_PUBLIC_WS_URL ?? "ws://localhost:8000";
 }

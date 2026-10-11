@@ -1,0 +1,14 @@
+name: Refresh predictions
+
+# Every 3 hours: picks up schedule changes, tip times and newly promoted models.
+on:
+  schedule:
+    - cron: "15 */3 * * *"
+  workflow_dispatch:
+
+jobs:
+  predict:
+    uses: ./.github/workflows/hoopsai-job.yml
+    with:
+      command: job predict_pregame
+    secrets: inherit

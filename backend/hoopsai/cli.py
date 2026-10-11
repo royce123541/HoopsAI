@@ -3,6 +3,7 @@
 import logging
 import sys
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -29,6 +30,15 @@ def main(verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False) -> N
     from hoopsai.logs import configure_logging
 
     configure_logging(logging.DEBUG if verbose else logging.INFO, get_settings().log_format)
+
+
+def _publisher(redis_url: str) -> Callable[[str, str], object]:
+    """Redis publish for live WebSocket updates; a no-op without Redis (clients poll)."""
+    if not redis_url:
+        return lambda channel, message: None
+    import redis
+
+    return redis.Redis.from_url(redis_url).publish
 
 
 def _season(value: str) -> int:
@@ -187,10 +197,14 @@ def live(
         str | None,
         typer.Option(help="Print win probability for one game without storing anything."),
     ] = None,
+    until_idle: Annotated[
+        bool, typer.Option(help="Stop once every game today is final (scheduled hosts).")
+    ] = False,
+    max_hours: Annotated[
+        float | None, typer.Option(help="Stop after this many hours (scheduled hosts).")
+    ] = None,
 ) -> None:
     """Run the live poller: in-game win probability for every live game."""
-    import redis
-
     from hoopsai.config import get_settings
     from hoopsai.db.session import get_sync_engine
     from hoopsai.live import service
@@ -226,14 +240,16 @@ def live(
             )
         typer.echo(f"{len(points)} states")
         return
-    publisher = redis.Redis.from_url(settings.redis_url)
-    recorder = service.Recorder(engine, publisher.publish, version, source="live")
+    recorder = service.Recorder(engine, _publisher(settings.redis_url), version, source="live")
     uri = settings.mlflow_tracking_uri
     models = service.ModelSource(
         current_version=lambda: production_version(uri, INGAME_MODEL_NAME),
         load=lambda: load_production_ingame(uri),
     )
-    service.LivePoller(engine, source, model, recorder, models=models).run_forever()
+    service.LivePoller(engine, source, model, recorder, models=models).run(
+        max_seconds=None if max_hours is None else max_hours * 3600,
+        stop_when_idle=until_idle,
+    )
 
 
 @app.command()
@@ -242,7 +258,6 @@ def replay(
     speed: Annotated[float, typer.Option(help="Game seconds per real second.")] = 30.0,
 ) -> None:
     """Replay a finished game through the live pipeline (snapshots, Redis, WebSocket)."""
-    import redis
     from sqlalchemy import select
 
     from hoopsai.config import get_settings
@@ -265,8 +280,7 @@ def replay(
     )
     events = parse_play_by_play(payload)
     model, version = load_production_ingame(settings.mlflow_tracking_uri)
-    publisher = redis.Redis.from_url(settings.redis_url)
-    recorder = service.Recorder(engine, publisher.publish, version, source="replay")
+    recorder = service.Recorder(engine, _publisher(settings.redis_url), version, source="replay")
     minutes = max(e["period"] for e in events) * 12 * 60 / speed / 60
     typer.echo(f"replaying {game_id} ({len(events)} events) at {speed:g}x, about {minutes:.1f} min")
     n = service.replay(
@@ -314,6 +328,22 @@ def monitor() -> None:
     from hoopsai.ingest import jobs
 
     typer.echo(jobs.monitor())
+
+
+JOBS = ("daily_pipeline", "predict_pregame", "retrain", "ingest_schedule", "monitor")
+
+
+@app.command()
+def job(name: Annotated[str, typer.Argument(help=" | ".join(JOBS))]) -> None:
+    """Run one scheduled job once, recorded like the worker's (for cron or GitHub Actions)."""
+    from hoopsai.ingest import jobs
+
+    if name not in JOBS:
+        raise typer.BadParameter(f"unknown job {name!r}; one of {', '.join(JOBS)}")
+    result = getattr(jobs, name)()
+    typer.echo(f"{name}: {result}")
+    if getattr(result, "failed", None):
+        raise typer.Exit(1)
 
 
 @app.command()

@@ -369,25 +369,30 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
-    { name = "apscheduler" },
     { name = "fastapi" },
-    { name = "lightgbm" },
-    { name = "mlflow-skinny" },
-    { name = "nba-api" },
-    { name = "numpy" },
-    { name = "pandas" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "redis" },
-    { name = "scikit-learn" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "typer" },
     { name = "tzdata" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
+[package.optional-dependencies]
+jobs = [
+    { name = "apscheduler" },
+    { name = "lightgbm" },
+    { name = "mlflow-skinny" },
+    { name = "nba-api" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "scikit-learn" },
+]
+
 [package.dev-dependencies]
 dev = [
+    { name = "hoopsai", extra = ["jobs"] },
     { name = "httpx" },
     { name = "mypy" },
     { name = "pandas-stubs" },
@@ -399,25 +404,27 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.20" },
-    { name = "apscheduler", specifier = ">=3.11,<4" },
+    { name = "apscheduler", marker = "extra == 'jobs'", specifier = ">=3.11,<4" },
     { name = "fastapi", specifier = ">=0.142" },
-    { name = "lightgbm", specifier = ">=4.7" },
-    { name = "mlflow-skinny", specifier = ">=3.16,<4" },
-    { name = "nba-api", specifier = ">=1.11" },
-    { name = "numpy", specifier = ">=2.3" },
-    { name = "pandas", specifier = ">=3.0" },
+    { name = "lightgbm", marker = "extra == 'jobs'", specifier = ">=4.7" },
+    { name = "mlflow-skinny", marker = "extra == 'jobs'", specifier = ">=3.16,<4" },
+    { name = "nba-api", marker = "extra == 'jobs'", specifier = ">=1.11" },
+    { name = "numpy", marker = "extra == 'jobs'", specifier = ">=2.3" },
+    { name = "pandas", marker = "extra == 'jobs'", specifier = ">=3.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3" },
     { name = "pydantic-settings", specifier = ">=2.15" },
     { name = "redis", specifier = ">=8.1" },
-    { name = "scikit-learn", specifier = ">=1.9" },
+    { name = "scikit-learn", marker = "extra == 'jobs'", specifier = ">=1.9" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1" },
     { name = "typer", specifier = ">=0.27" },
     { name = "tzdata", specifier = ">=2025.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54" },
 ]
+provides-extras = ["jobs"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "hoopsai", extras = ["jobs"] },
     { name = "httpx", specifier = ">=0.28" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pandas-stubs", specifier = ">=3.0" },

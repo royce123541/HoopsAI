@@ -128,6 +128,8 @@ class LivePoller:
     _last_scoreboard: float | None = None
     _last_model_check: float | None = None
     _last_pbp: dict[str, float] = field(default_factory=dict)
+    # From the last scoreboard: is any modelled game today still to play or in progress?
+    _games_pending: bool | None = None
 
     def check_model(self) -> None:
         """Switch to a newly promoted model. Games in progress keep their pre-game estimate
@@ -172,6 +174,9 @@ class LivePoller:
             days.append(today.date() - timedelta(days=1))
         statuses = [g for d in days for g in self.source.scoreboard(d)]
         known = self._known_games([g.game_id for g in statuses])
+        self._games_pending = any(
+            g.game_id in known and g.status != GameStatus.FINAL for g in statuses
+        )
         for g in statuses:
             if g.game_id not in known or g.status == GameStatus.SCHEDULED:
                 continue
@@ -208,14 +213,37 @@ class LivePoller:
                 self._last_pbp[game_id] = now
                 self.poll_game(game_id)
 
-    def run_forever(self, sleep: Callable[[float], None] = time.sleep) -> None:
+    @property
+    def idle(self) -> bool:
+        """Every game on today's board is final (or there are none), and none is tracked."""
+        return self._games_pending is False and not self.trackers
+
+    def run(
+        self,
+        *,
+        max_seconds: float | None = None,
+        stop_when_idle: bool = False,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        """Poll until stopped; for time-limited hosts (GitHub Actions jobs end after 6 hours),
+        optionally stop once today's games are over or after `max_seconds`."""
         log.info("live poller started")
+        started = self.clock()
         while True:
             try:
                 self.tick()
             except Exception:  # keep polling: one failed request must not end the service
                 log.exception("live poll failed")
+            if stop_when_idle and self.idle:
+                log.info("no games left to play today; stopping")
+                return
+            if max_seconds is not None and self.clock() - started >= max_seconds:
+                log.info("time limit reached; stopping")
+                return
             sleep(1.0)
+
+    def run_forever(self, sleep: Callable[[float], None] = time.sleep) -> None:
+        self.run(sleep=sleep)
 
 
 # ---------------------------------------------------------------- replay

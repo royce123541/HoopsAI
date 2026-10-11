@@ -13,11 +13,13 @@ from hoopsai.db.session import get_engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    app.state.redis = Redis.from_url(get_settings().redis_url, decode_responses=True)
+    url = get_settings().redis_url
+    app.state.redis = Redis.from_url(url, decode_responses=True) if url else None
     try:
         yield
     finally:
-        await app.state.redis.aclose()
+        if app.state.redis is not None:
+            await app.state.redis.aclose()
         await get_engine().dispose()
 
 

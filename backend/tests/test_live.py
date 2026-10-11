@@ -406,3 +406,47 @@ def test_poller_switches_to_a_newly_promoted_model(
     assert loads == ["2"]
     assert recorder.model_version == "2"
     assert poller.model is replacement and poller.trackers[GAME].model is replacement
+
+
+def test_poller_waits_for_tip_off_and_stops_when_games_are_over(
+    games_db: Engine, trained: tuple[ingame.InGameModel, ingame.InGameReport]
+) -> None:
+    model, _ = trained
+    events, _ = make_pbp_game(np.random.default_rng(3), GAME, 0.5)
+    source = FakeLiveSource(events)
+    source.status = GameStatus.SCHEDULED
+    recorder = service.Recorder(games_db, Published(), "1", source="live")
+    now = [0.0]
+    poller = service.LivePoller(games_db, source, model, recorder, clock=lambda: now[0])
+
+    def sleep(seconds: float) -> None:  # the game tips off, then ends, as time passes
+        now[0] += seconds
+        if now[0] == 60:
+            source.status, source.revealed = GameStatus.LIVE, 10
+        if now[0] == 120:
+            source.status, source.revealed = GameStatus.FINAL, len(events)
+
+    poller.run(stop_when_idle=True, sleep=sleep)
+
+    assert 120 <= now[0] <= 160  # stopped soon after the final, not while waiting for tip
+    assert snapshot_count(games_db, "live") > 0
+    assert poller.trackers == {}
+
+
+def test_poller_stops_at_its_time_limit(
+    games_db: Engine, trained: tuple[ingame.InGameModel, ingame.InGameReport]
+) -> None:
+    model, _ = trained
+    events, _ = make_pbp_game(np.random.default_rng(3), GAME, 0.5)
+    source = FakeLiveSource(events)
+    source.status = GameStatus.SCHEDULED
+    recorder = service.Recorder(games_db, Published(), "1", source="live")
+    now = [0.0]
+    poller = service.LivePoller(games_db, source, model, recorder, clock=lambda: now[0])
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    poller.run(max_seconds=300, stop_when_idle=True, sleep=sleep)
+
+    assert now[0] == 300

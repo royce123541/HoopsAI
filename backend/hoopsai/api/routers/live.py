@@ -48,6 +48,9 @@ async def winprob_stream(websocket: WebSocket, game_id: str) -> None:
     """Sends {"type": "snapshot", ...} with the history so far, then each published
     {"type": "points" | "reset", ...} message. Subscribing happens before the snapshot is
     read, so nothing published in between is lost; clients de-duplicate by action_id."""
+    if websocket.app.state.redis is None:  # no Redis here: clients poll the REST endpoint
+        await websocket.close(code=1013)
+        return
     await websocket.accept()
     pubsub = websocket.app.state.redis.pubsub()
     await pubsub.subscribe(channel(game_id))

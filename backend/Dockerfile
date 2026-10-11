@@ -18,10 +18,10 @@ WORKDIR /app
 
 # Install dependencies first so code edits don't bust the layer cache.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project --no-dev
+RUN uv sync --frozen --no-install-project --no-dev --extra jobs
 
 COPY . .
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra jobs
 
 RUN useradd --create-home --uid 1000 hoopsai
 USER hoopsai

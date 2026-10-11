@@ -3,6 +3,8 @@ name = "hoopsai"
 version = "0.1.0"
 description = "HoopsAI backend: NBA data ingestion, win-probability models, and API"
 requires-python = ">=3.12,<3.13"
+# The API alone needs only these, which keeps it small enough for a serverless function
+# (Vercel installs with `uv sync --no-dev`, which leaves out extras).
 dependencies = [
     "fastapi>=0.142",
     "uvicorn[standard]>=0.54",
@@ -12,6 +14,12 @@ dependencies = [
     "psycopg[binary]>=3.3",
     "redis>=8.1",
     "typer>=0.27",
+    "tzdata>=2025.2",
+]
+
+[project.optional-dependencies]
+# Ingestion, features, training, prediction and the live poller.
+jobs = [
     "nba-api>=1.11",
     "apscheduler>=3.11,<4",
     "pandas>=3.0",
@@ -19,14 +27,17 @@ dependencies = [
     "scikit-learn>=1.9",
     "lightgbm>=4.7",
     "mlflow-skinny>=3.16,<4",
-    "tzdata>=2025.2",
 ]
 
 [project.scripts]
 hoopsai = "hoopsai.cli:app"
 
+[tool.vercel]
+entrypoint = "hoopsai.api.main:app"
+
 [dependency-groups]
 dev = [
+    "hoopsai[jobs]",  # so local `uv run` has everything
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "httpx>=0.28",

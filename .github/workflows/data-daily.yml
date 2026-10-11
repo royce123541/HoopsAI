@@ -1,0 +1,35 @@
+name: Daily update
+
+# 10:00 UTC, after the last West Coast games end: schedule refresh, yesterday's results,
+# features, predictions, model monitoring and live-history thinning.
+on:
+  schedule:
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+jobs:
+  schedule:
+    uses: ./.github/workflows/hoopsai-job.yml
+    with:
+      command: job ingest_schedule
+    secrets: inherit
+  daily:
+    needs: schedule
+    if: always()
+    uses: ./.github/workflows/hoopsai-job.yml
+    with:
+      command: job daily_pipeline
+    secrets: inherit
+  keepalive:
+    # GitHub disables scheduled workflows after 60 days without repository activity;
+    # re-enabling them daily resets that clock without any commits.
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for wf in data-daily.yml data-predict.yml data-retrain.yml live.yml; do
+            gh workflow enable "$wf" --repo "$GITHUB_REPOSITORY"
+          done

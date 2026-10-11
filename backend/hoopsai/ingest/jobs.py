@@ -90,7 +90,22 @@ def daily_pipeline() -> RunSummary:
     rebuild_features(get_sync_engine())
     _predict_pregame()
     _monitor()
+    _prune_live_history()
     return summary
+
+
+def _prune_live_history() -> None:
+    from hoopsai.config import get_settings
+    from hoopsai.live.prune import prune_live_history
+
+    settings = get_settings()
+    if settings.live_history_points > 0:
+        prune_live_history(
+            get_sync_engine(),
+            keep_points=settings.live_history_points,
+            current=current_season(datetime.now(UTC).date()),
+            seasons=settings.live_history_seasons,
+        )
 
 
 def _predict_pregame() -> None:

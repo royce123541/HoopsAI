@@ -1,0 +1,40 @@
+name: HoopsAI job
+
+# Reusable: runs one `hoopsai` command against the production database (Neon), with ESPN as
+# the data source (stats.nba.com blocks GitHub's servers) and models kept in the database.
+on:
+  workflow_call:
+    inputs:
+      command:
+        type: string
+        required: true
+      timeout-minutes:
+        type: number
+        default: 60
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      HOOPSAI_ENV: production
+      HOOPSAI_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      HOOPSAI_MLFLOW_TRACKING_URI: db
+      HOOPSAI_DATA_SOURCE: espn
+      HOOPSAI_REDIS_URL: ""
+      HOOPSAI_STORE_PBP: "false"  # keep the free 0.5 GB database from filling up
+      HOOPSAI_LIVE_HISTORY_POINTS: "150"
+      HOOPSAI_INGAME_RETRAIN: "false"  # needs the full play-by-play, which stays local
+      MLFLOW_DISABLE_AGENT_HINT: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0  # no floating major tag is published for this action
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv sync --frozen --no-dev --extra jobs
+      - run: uv run --no-sync alembic upgrade head
+      - run: uv run --no-sync hoopsai ${{ inputs.command }}

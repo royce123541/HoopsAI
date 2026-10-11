@@ -23,21 +23,58 @@ function merge(current: Map<number, WinProbPoint>, points: WinProbPoint[]) {
   return next;
 }
 
+/** How often the browser re-fetches a live game's series when WebSockets are off. */
+const POLL_MS = 10_000;
+
 /**
  * Subscribes to the game's WebSocket stream: a snapshot of every point so far, then new points
  * as the live poller (or a replay) records them. Points are keyed by action_id, so a point
  * that arrives in both the snapshot and an update is counted once. Reconnects with backoff.
+ * With wsBase "poll" it instead re-fetches the whole series every POLL_MS while the game is
+ * live (serverless hosts such as Vercel cannot hold WebSockets open).
  */
 function useLiveWinProb(
   gameId: string,
   wsBase: string,
   initial: WinProbSeries,
+  live: boolean,
 ) {
   const [points, setPoints] = useState(() => merge(new Map(), initial.points));
   const [source, setSource] = useState(initial.source);
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState(wsBase === "poll");
 
   useEffect(() => {
+    if (wsBase !== "poll" || !live) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+
+    async function poll() {
+      try {
+        const res = await fetch(
+          `/api/games/${encodeURIComponent(gameId)}/winprob`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) throw new Error(String(res.status));
+        const series = (await res.json()) as WinProbSeries;
+        if (stopped) return;
+        setPoints(merge(new Map(), series.points));
+        setSource(series.source);
+        setConnected(true);
+      } catch {
+        if (!stopped) setConnected(false);
+      }
+      if (!stopped) timer = setTimeout(poll, POLL_MS);
+    }
+
+    timer = setTimeout(poll, POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [gameId, wsBase, live]);
+
+  useEffect(() => {
+    if (wsBase === "poll") return;
     let socket: WebSocket | null = null;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let attempts = 0;
@@ -99,7 +136,12 @@ export function LiveWinProb({
   away: TeamRef;
   live: boolean;
 }) {
-  const { points, connected, source } = useLiveWinProb(gameId, wsBase, initial);
+  const { points, connected, source } = useLiveWinProb(
+    gameId,
+    wsBase,
+    initial,
+    live,
+  );
   if (points.length === 0) {
     return live ? (
       <p className="text-ink-2">Waiting for the first play of the game.</p>

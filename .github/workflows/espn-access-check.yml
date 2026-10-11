@@ -1,0 +1,30 @@
+name: ESPN access check
+
+# Run by hand (Actions tab → "ESPN access check" → Run workflow). stats.nba.com times out from
+# GitHub's servers; this checks whether ESPN's public JSON API answers instead, which would let
+# daily updates and live tracking run on GitHub Actions.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Scoreboard and play-by-play
+        run: |
+          python3 - <<'EOF'
+          import json, urllib.request
+          def get(url):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+              with urllib.request.urlopen(req, timeout=20) as r:
+                  return json.load(r)
+          base = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+          sb = get(f"{base}/scoreboard?dates=20260613")
+          event = sb["events"][0]
+          print("OK scoreboard:", event["name"], event["status"]["type"]["name"])
+          summary = get(f"{base}/summary?event={event['id']}")
+          print("OK play-by-play:", len(summary["plays"]), "plays")
+          upcoming = get(f"{base}/scoreboard?dates=20261020")
+          print("OK schedule:", len(upcoming["events"]), "games on 2026-10-20")
+          EOF

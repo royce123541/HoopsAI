@@ -26,7 +26,7 @@ Free tiers change, so re-check these limits once a year.
 
 ### 1. Neon
 
-1. Sign up at [neon.tech](https://neon.tech) and create a project in **US East**.
+1. Sign up at [neon.tech](https://neon.tech) and create a project. Set Vercel's function region (`regions` in `vercel.json`, now `sin1`, Singapore) to the region nearest the database.
 2. Copy two connection strings from **Connect**:
    - the **pooled** one (host contains `-pooler`), for Vercel;
    - the **direct** one, for GitHub Actions and `hoopsai publish`.

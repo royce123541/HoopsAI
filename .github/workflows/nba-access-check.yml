@@ -1,0 +1,38 @@
+name: NBA access check
+
+# Run by hand (Actions tab → "NBA access check" → Run workflow). Answers one question:
+# can GitHub's servers reach stats.nba.com? That decides whether data updates and live
+# tracking can run on GitHub Actions instead of a home PC.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install nba_api
+      - name: ScoreboardV3 (live status)
+        run: |
+          python -c "
+          from nba_api.stats.endpoints import scoreboardv3
+          d = scoreboardv3.ScoreboardV3(game_date='2026-10-20', league_id='00', timeout=20).get_dict()
+          print('OK scoreboard:', len(d['scoreboard']['games']), 'games')
+          "
+      - name: PlayByPlayV3 (play-by-play)
+        run: |
+          python -c "
+          from nba_api.stats.endpoints import playbyplayv3
+          d = playbyplayv3.PlayByPlayV3(game_id='0042500405', timeout=20).get_dict()
+          print('OK play-by-play:', len(d['game']['actions']), 'actions')
+          "
+      - name: LeagueGameLog (daily results)
+        run: |
+          python -c "
+          from nba_api.stats.endpoints import leaguegamelog
+          d = leaguegamelog.LeagueGameLog(season='2025-26', player_or_team_abbreviation='T', timeout=20).get_dict()
+          print('OK game log:', len(d['resultSets'][0]['rowSet']), 'rows')
+          "

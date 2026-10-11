@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     mlflow_tracking_uri: str = "http://127.0.0.1:5000"
     cors_origins: list[str] = ["http://localhost:3000"]
     log_format: Literal["text", "json"] = "text"  # json: one object per line, for containers
+    # nba_stats: stats.nba.com (blocks cloud servers); espn: ESPN's public API (works anywhere).
+    data_source: Literal["nba_stats", "espn"] = "nba_stats"
     ingame_retrain: bool = True  # weekly in-game retrain needs ~750 MB; off on small hosts
 
 

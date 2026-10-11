@@ -33,13 +33,43 @@ class RunSummary:
         )
 
 
+def run_task(
+    engine: Engine,
+    summary: RunSummary,
+    task_key: str,
+    fetch: Callable[[], RawResponse],
+    load: Callable[[Connection, RawResponse], int],
+    *,
+    skip_if_done: bool,
+) -> None:
+    """Fetch, store the raw payload, load core rows and checkpoint, in one transaction. A
+    failure is recorded and counted, never raised."""
+    if skip_if_done:
+        with engine.connect() as conn:
+            if store.is_done(conn, task_key):
+                summary.skipped += 1
+                return
+    try:
+        resp = fetch()
+        with engine.begin() as conn:
+            store.save_raw(conn, resp)
+            rows = load(conn, resp)
+            store.mark(conn, task_key, store.SUCCESS, rows=rows)
+    except Exception as exc:
+        log.exception("task %s failed", task_key)
+        with engine.begin() as conn:
+            store.mark(conn, task_key, store.FAILED, error=f"{type(exc).__name__}: {exc}")
+        summary.failed.append(task_key)
+        return
+    summary.succeeded += 1
+    log.info("task %s: %d rows", task_key, rows)
+
+
 @dataclass
 class Ingestor:
     engine: Engine
     source: DataSource
     summary: RunSummary = field(default_factory=RunSummary)
-
-    # ------------------------------------------------------------ task runner
 
     def _run(
         self,
@@ -49,25 +79,7 @@ class Ingestor:
         *,
         skip_if_done: bool,
     ) -> None:
-        if skip_if_done:
-            with self.engine.connect() as conn:
-                if store.is_done(conn, task_key):
-                    self.summary.skipped += 1
-                    return
-        try:
-            resp = fetch()
-            with self.engine.begin() as conn:
-                store.save_raw(conn, resp)
-                rows = load(conn, resp)
-                store.mark(conn, task_key, store.SUCCESS, rows=rows)
-        except Exception as exc:
-            log.exception("task %s failed", task_key)
-            with self.engine.begin() as conn:
-                store.mark(conn, task_key, store.FAILED, error=f"{type(exc).__name__}: {exc}")
-            self.summary.failed.append(task_key)
-            return
-        self.summary.succeeded += 1
-        log.info("task %s: %d rows", task_key, rows)
+        run_task(self.engine, self.summary, task_key, fetch, load, skip_if_done=skip_if_done)
 
     # ------------------------------------------------------------ tasks
 

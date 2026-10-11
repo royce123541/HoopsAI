@@ -90,6 +90,8 @@ class Game(TimestampMixin, Base):
     home_score: Mapped[int | None] = mapped_column(SmallInteger)
     away_score: Mapped[int | None] = mapped_column(SmallInteger)
     is_neutral: Mapped[bool | None] = mapped_column(Boolean)
+    # ESPN event id, for games ingested from ESPN (cloud jobs); see hoopsai.ingest.espn.
+    espn_id: Mapped[str | None] = mapped_column(Text, unique=True)
 
 
 class TeamGameStats(Base):

@@ -194,7 +194,7 @@ def live(
     from hoopsai.config import get_settings
     from hoopsai.db.session import get_sync_engine
     from hoopsai.live import service
-    from hoopsai.live.source import StatsLiveSource
+    from hoopsai.live.source import make_live_source
     from hoopsai.live.tracker import LiveTracker
     from hoopsai.ml.registry import (
         INGAME_MODEL_NAME,
@@ -215,7 +215,7 @@ def live(
                 "no production in-game model yet (run `hoopsai train-ingame`); retrying in 60s"
             )
             time.sleep(60)
-    source = StatsLiveSource()
+    source = make_live_source(engine)
     if watch:
         tracker = LiveTracker(model, service.pregame_probability(engine, watch))
         points = tracker.update(source.play_by_play(watch))

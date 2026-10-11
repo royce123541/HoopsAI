@@ -42,13 +42,17 @@ def test_scoreboard() -> None:
     assert game.game_date == date(2026, 6, 13)
 
 
-def test_scoreboard_skips_preseason_and_unresolved_teams() -> None:
+def test_scoreboard_skips_games_that_do_not_count() -> None:
     payload = load("scoreboard_20260613")
     preseason = json.loads(json.dumps(payload["events"][0]))
     preseason["season"]["type"] = 1
     tbd = json.loads(json.dumps(payload["events"][0]))
     tbd["competitions"][0]["competitors"][0]["team"]["id"] = "-1"
-    payload["events"] += [preseason, tbd]
+    postponed = json.loads(json.dumps(payload["events"][0]))
+    postponed["status"]["type"]["name"] = "STATUS_POSTPONED"  # state stays "post", 0-0
+    cup_final = json.loads(json.dumps(payload["events"][0]))
+    cup_final["competitions"][0]["type"] = {"id": "39", "abbreviation": "CC"}
+    payload["events"] += [preseason, tbd, postponed, cup_final]
     assert [g.espn_id for g in parse_scoreboard(payload)] == ["401859967"]
 
 

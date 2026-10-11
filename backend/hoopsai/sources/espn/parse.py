@@ -50,6 +50,10 @@ ESPN_TO_NBA_TEAM = {
 # ESPN season.type -> ours; preseason (1), All-Star and others are skipped.
 SEASON_TYPES = {2: SeasonType.REGULAR, 3: SeasonType.PLAYOFFS, 5: SeasonType.PLAYIN}
 STATUS = {"pre": GameStatus.SCHEDULED, "in": GameStatus.LIVE, "post": GameStatus.FINAL}
+# A postponed game keeps its original slot as a 0-0 "post" entry; its makeup is a new event.
+NOT_PLAYED = {"STATUS_POSTPONED", "STATUS_CANCELED"}
+# The NBA Cup final does not count in the NBA's records (stats.nba.com omits it), so skip it.
+EXHIBITION_TYPES = {"CC"}
 
 _FT = re.compile(r"Free Throw - (.*)")
 
@@ -81,6 +85,11 @@ def parse_scoreboard(payload: dict[str, Any]) -> list[EspnGame]:
         away_id = ESPN_TO_NBA_TEAM.get(teams.get("away", {}).get("team", {}).get("id", ""))
         if season_type is None or home_id is None or away_id is None:
             continue  # preseason, All-Star, or an unresolved (TBD) playoff slot
+        if (
+            ev["status"]["type"]["name"] in NOT_PLAYED
+            or comp.get("type", {}).get("abbreviation") in EXHIBITION_TYPES
+        ):
+            continue
         status = STATUS.get(ev["status"]["type"]["state"], GameStatus.SCHEDULED)
         tip = datetime.fromisoformat(ev["date"].replace("Z", "+00:00"))
         scored = status is not GameStatus.SCHEDULED

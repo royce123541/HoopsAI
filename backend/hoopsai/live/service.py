@@ -108,6 +108,10 @@ class ModelSource:
     load: Callable[[], tuple[InGameModel, str]]  # downloads the model
 
 
+# How far ahead a scheduled tip-off keeps a time-limited poller running (see LivePoller.idle).
+PENDING_WITHIN = timedelta(hours=6)
+
+
 @dataclass
 class LivePoller:
     """Polls the scoreboard every `scoreboard_every_s` and each live game's play-by-play
@@ -174,8 +178,19 @@ class LivePoller:
             days.append(today.date() - timedelta(days=1))
         statuses = [g for d in days for g in self.source.scoreboard(d)]
         known = self._known_games([g.game_id for g in statuses])
+        # A game still to come keeps the poller busy only if it tips off soon; later games
+        # belong to a later scheduled run (after midnight Eastern, "today" is tomorrow's slate).
+        soon = now_utc + PENDING_WITHIN
         self._games_pending = any(
-            g.game_id in known and g.status != GameStatus.FINAL for g in statuses
+            g.game_id in known
+            and (
+                g.status == GameStatus.LIVE
+                or (
+                    g.status == GameStatus.SCHEDULED
+                    and (g.tip_time_utc is None or g.tip_time_utc <= soon)
+                )
+            )
+            for g in statuses
         )
         for g in statuses:
             if g.game_id not in known or g.status == GameStatus.SCHEDULED:

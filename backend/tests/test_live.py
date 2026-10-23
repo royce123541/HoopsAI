@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -212,6 +212,7 @@ class FakeLiveSource:
         self.events = events
         self.revealed = 0
         self.status = GameStatus.LIVE
+        self.tip: datetime | None = None
 
     def scoreboard(self, day: date) -> list[LiveGameStatus]:
         last = self.events[self.revealed - 1] if self.revealed else None
@@ -222,6 +223,7 @@ class FakeLiveSource:
                 int(last["period"]) if last else 1,
                 int(last["score_home"]) if last else 0,
                 int(last["score_away"]) if last else 0,
+                self.tip,
             ),
             LiveGameStatus("0012600999", GameStatus.LIVE, 1, 0, 0),  # preseason: not tracked
         ]
@@ -450,3 +452,24 @@ def test_poller_stops_at_its_time_limit(
     poller.run(max_seconds=300, stop_when_idle=True, sleep=sleep)
 
     assert now[0] == 300
+
+
+def test_poller_does_not_wait_for_a_game_hours_away(
+    games_db: Engine, trained: tuple[ingame.InGameModel, ingame.InGameReport]
+) -> None:
+    """After the night's games, "today" (Eastern) is tomorrow's slate: a later run covers it."""
+    model, _ = trained
+    events, _ = make_pbp_game(np.random.default_rng(3), GAME, 0.5)
+    source = FakeLiveSource(events)
+    source.status = GameStatus.SCHEDULED
+    source.tip = datetime.now(UTC) + timedelta(hours=10)
+    recorder = service.Recorder(games_db, Published(), "1", source="live")
+    now = [0.0]
+    poller = service.LivePoller(games_db, source, model, recorder, clock=lambda: now[0])
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    poller.run(max_seconds=3600, stop_when_idle=True, sleep=sleep)
+
+    assert now[0] == 0  # stopped on the first scoreboard

@@ -9,7 +9,7 @@ event vocabulary."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Protocol
 
 from nba_api.stats.endpoints import playbyplayv3, scoreboardv3
@@ -32,11 +32,19 @@ class LiveGameStatus:
     period: int
     home_score: int
     away_score: int
+    tip_time_utc: datetime | None = None
 
 
 class LiveSource(Protocol):
     def scoreboard(self, day: date) -> list[LiveGameStatus]: ...
     def play_by_play(self, game_id: str) -> list[PbpEventRow]: ...
+
+
+def _parse_utc(value: str | None) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")) if value else None
+    except ValueError:
+        return None
 
 
 class StatsLiveSource:
@@ -68,6 +76,7 @@ class StatsLiveSource:
                 period=int(g.get("period") or 0),
                 home_score=int(g["homeTeam"].get("score") or 0),
                 away_score=int(g["awayTeam"].get("score") or 0),
+                tip_time_utc=_parse_utc(g.get("gameTimeUTC")),
             )
             for g in payload["scoreboard"]["games"]
         ]
@@ -101,6 +110,7 @@ class EspnLiveSource:
                 period=g.period,
                 home_score=g.home_score or 0,
                 away_score=g.away_score or 0,
+                tip_time_utc=g.tip_time_utc,
             )
             for g in games
         ]
